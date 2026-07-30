@@ -1,0 +1,13 @@
+.NavMenu {
+    width: 100%;
+    position: fixed;
+    bottom: 0;
+    display: flex;
+    justify-content: right;
+}
+
+.menu-button {
+    z-index: 100;
+    transform: translate(-1rem, -1rem);
+    border: none
+}

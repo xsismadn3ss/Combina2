@@ -1,0 +1,18 @@
+﻿@code {
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Color { get; set; } = "black";
+
+    private string SvgContent { get; set; } = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        var path = Path.Combine("wwwroot", "svg", $"{Name}.svg");
+        if (File.Exists(path))
+        {
+            SvgContent = File.ReadAllText(path)
+                .Replace("fill=\"currentColor\"", $"fill=\"{Color}\"");
+        }
+    }
+}
+
+<div>@((MarkupString)SvgContent)</div>
