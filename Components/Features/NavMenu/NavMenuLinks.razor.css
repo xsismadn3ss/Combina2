@@ -11,35 +11,36 @@
 .links-container {
     background-color: rgba(var(--secondary), 0.4);
     backdrop-filter: blur(3px);
-    transform: translate(0, -0.8rem);
+    transform: translate(0, -1.1rem);
     border: rgb(var(--secondary)) 3px solid;
-    border-radius: 1rem !important;
+    border-radius: 1rem;
     padding: 1rem;
     color: rgb(var(--font-color));
-    scale: 0.8;
     transition: 0.25s cubic-bezier(0.165, 0.84, 0.44, 1);
+    overflow: hidden;
+    height: 1.4rem;
+    width: 2rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: start;
+    align-items: center;
 }
 
-.pop-up{
-    transition: 0.25s cubic-bezier(0.075, 0.82, 0.165, 1);
-    padding-bottom: 5rem;
-    padding-inline: 4rem;
-    scale: 1;
+.pop-up {
+    height: 7rem;
+    width: 10rem
 }
 
 .links-list {
     list-style: none;
     padding: 0;
     margin: 0;
+    display: flex;
+    justify-content: space-between;
+    opacity: 100%;
+    transition: 0.2s cubic-bezier(0.075, 0.82, 0.165, 1);
+}
 
-    li {
-        color: inherit;
-
-        a {
-            text-decoration: none;
-            color: inherit;
-            all: unset;
-            cursor: pointer;
-        }
-    }
+.invisible {
+    opacity: 0%;
 }

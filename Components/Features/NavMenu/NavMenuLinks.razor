@@ -1,25 +1,16 @@
-﻿@using System.ComponentModel.DataAnnotations
-@inject NavMenuState State
+﻿@inject NavMenuState State
 @implements IDisposable
 
 @code {
-    public sealed class NavMenuLink
-    {
-        [Required]
-        public string Name { get; set; } = String.Empty;
-        public string Href { get; set; } = "/";
-    }
-
-    private List<NavMenuLink> Links = new()
+    private List<LinkModel> Links = new()
     {
         new()
         {
-            Name = "Home"
+            Name = "Generate", IconName="sparkles", Href="/generate"
         },
         new()
         {
-            Name = "Generate",
-            Href = "/generate"
+            Name = "Identify", IconName="scan-search", Href = "/identify"
         }
     };
 
@@ -37,14 +28,12 @@
 
 <nav class="links-root">
     <div class="@($"links-container {(State.MenuVisible ? "pop-up" : "")}")">
-    <ul class="links-list">
-        @foreach (var link in Links)
-        {
-            <li>
-                <a href="@link.Href">@link.Name</a>
-            </li>
-        }
-    </ul>
-</div>
+        <ul class="@($"links-list {(State.MenuVisible ? "" : "invisible")}")">
+            @foreach (var link in Links)
+            {
+                <NavMenuLink link="@link" />
+            }
+        </ul>
+    </div>
 
 </nav>
