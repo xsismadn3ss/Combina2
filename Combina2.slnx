@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="Combina2.csproj" />
+  <Project Path="Combina2.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
 </Solution>
