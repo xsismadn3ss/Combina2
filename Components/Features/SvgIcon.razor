@@ -1,6 +1,7 @@
 ﻿@code {
     [Parameter] public string Name { get; set; } = string.Empty;
     [Parameter] public string Color { get; set; } = "black";
+    [Parameter] public string Size { get; set; } = "24px";
 
     private string SvgContent { get; set; } = string.Empty;
 
@@ -9,10 +10,20 @@
         var path = Path.Combine("wwwroot", "svg", $"{Name}.svg");
         if (File.Exists(path))
         {
-            SvgContent = File.ReadAllText(path)
-                .Replace("fill=\"currentColor\"", $"fill=\"{Color}\"");
+            SvgContent = File.ReadAllText(path);
         }
     }
 }
 
-<div>@((MarkupString)SvgContent)</div>
+<div style="--size:@Size; --color:@Color">
+    @((MarkupString)SvgContent)
+</div>
+
+<style>
+    div svg {
+        width: var(--size);
+        height: var(--size);
+        fill: var(--color);
+        color: var(--color);
+    }
+</style>
