@@ -1,14 +1,17 @@
-:root{
-    --bg-color: #262423;
-    --primary: #8350C4;
-    --secondary: #553B63;
-    --accent: #845D9C
+:root {
+    --bg-color: 51, 48, 59;
+    --primary: 131, 80, 196;
+    --secondary: 85, 59, 99;
+    --accent: 132, 93, 156;
+    --font-color: 186, 181, 196;
 }
 
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    color: rgb(var(--font-color));
     margin: 0;
     padding: 0;
+    background: rgb(var(--bg-color));
 }
 
 .content {
