@@ -1,4 +1,6 @@
 ﻿@using System.ComponentModel.DataAnnotations
+@inject NavMenuState State
+@implements IDisposable
 
 @code {
     public sealed class NavMenuLink
@@ -8,28 +10,41 @@
         public string Href { get; set; } = "/";
     }
 
-    private IEnumerable<NavMenuLink> Links = [];
-
-    protected override void OnInitialized()
+    private List<NavMenuLink> Links = new()
     {
-        // poblar con items
-        Links.Append(new()
+        new()
         {
             Name = "Home"
-        });
-        Links.Append(new()
+        },
+        new()
         {
             Name = "Generate",
             Href = "/generate"
-        });
+        }
+    };
+
+    protected override void OnInitialized()
+    {
+
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
     }
 }
 
-<ul>
-    @foreach (var link in Links)
-    {
-        <li>
-            <NavLink href="@link.Href">@link.Name</NavLink>
-        </li>
-    }
-</ul>
+<nav class="links-root">
+    <div class="@($"links-container {(State.MenuVisible ? "pop-up" : "")}")">
+    <ul class="links-list">
+        @foreach (var link in Links)
+        {
+            <li>
+                <a href="@link.Href">@link.Name</a>
+            </li>
+        }
+    </ul>
+</div>
+
+</nav>
