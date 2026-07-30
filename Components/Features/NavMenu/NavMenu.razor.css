@@ -1,13 +1,45 @@
 .NavMenu {
-    width: 100%;
     position: fixed;
     bottom: 0;
-    display: flex;
-    justify-content: right;
+    left: 50%;
+    transform: translate(-50%);
+    z-index: 100;
 }
 
 .menu-button {
-    z-index: 100;
-    transform: translate(-1rem, -1rem);
-    border: none
+    transform: translate(0, -1.4rem);
+    border: rgb(var(--secondary)) solid 3px;
+    border-radius: 0.8rem;
+    padding-inline: 0.8rem;
+    padding-top: 0.6rem;
+    padding-bottom: 0.5rem;
+    background-color: rgba(var(--secondary), 0.3);
+    backdrop-filter: blur(10px);
+    margin: 0;
+    outline: none;
+    cursor: pointer;
+    transition: 0.3s ease-in;
+}
+
+button-selected {
+    transition: 0.3s ease-in;
+    background-color: rgba(var(--secondary), 0.6) !important;
+}
+
+@keyframes pulse {
+    0% {
+        transform: translate(0, -1.4rem)
+    }
+
+    50% {
+        transform: scale(1.1, 1.1) translate(0, -1.3rem)
+    }
+
+    100% {
+        transform: translate(0, -1.4rem)
+    }
+}
+
+.pulse-button {
+    animation: pulse 0.35s ease;
 }
