@@ -1,11 +1,18 @@
+@inject NavigationManager navigation
+
 @code {
     [Parameter]
     public required LinkModel link { get; set; }
+
+    private void HandleClick()
+    {
+        navigation.NavigateTo(link.Href);
+    }
 }
 
-<li class="link-item">
+<li class="link-item" @onclick="HandleClick">
     <div class="link-icon">
         <SvgIcon Name="@link.IconName" Size="30px" Color="rgba(var(--primary), 0.5)" />
     </div>
-    <a href="@link.Href">@link.Name</a>
+    <span>@link.Name</span>
 </li>
