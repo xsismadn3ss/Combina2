@@ -18,8 +18,8 @@
     color: rgb(var(--font-color));
     transition: 0.25s cubic-bezier(0.165, 0.84, 0.44, 1);
     overflow: hidden;
-    height: 1.4rem;
-    width: 2rem;
+    height: 2rem;
+    width: 2.5rem;
     display: flex;
     flex-direction: column;
     justify-content: start;
@@ -27,8 +27,8 @@
 }
 
 .pop-up {
-    height: 7rem;
-    width: 10rem
+    height: 12rem;
+    width: 12rem
 }
 
 .links-list {
@@ -36,11 +36,17 @@
     padding: 0;
     margin: 0;
     display: flex;
-    justify-content: space-between;
-    opacity: 100%;
-    transition: 0.2s cubic-bezier(0.075, 0.82, 0.165, 1);
+    justify-content: space-evenly;
 }
 
-.invisible {
+.fade{
+    transition: 0.5s cubic-bezier(0.075, 0.82, 0.165, 1);
+}
+
+.in{
+    opacity: 100%;
+}
+
+.out {
     opacity: 0%;
 }

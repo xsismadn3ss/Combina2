@@ -11,8 +11,14 @@
         new()
         {
             Name = "Identify", IconName="scan-search", Href = "/identify"
+        },
+        new()
+        {
+            Name = "Config", IconName="cog", Href = "/config"
         }
     };
+
+    private string inOut => State.MenuVisible ? "in" : "out";
 
     protected override void OnInitialized()
     {
@@ -28,12 +34,14 @@
 
 <nav class="links-root">
     <div class="@($"links-container {(State.MenuVisible ? "pop-up" : "")}")">
-        <ul class="@($"links-list {(State.MenuVisible ? "" : "invisible")}")">
-            @foreach (var link in Links)
-            {
-                <NavMenuLink link="@link" />
-            }
-        </ul>
+        <div class="fade @inOut">
+             <ul class="links-list">
+               <NavMenuLink link="@Links[0]" />
+                <NavMenuLink link="@Links[1]" />
+            </ul>
+            <ul class="links-list">
+                <NavMenuLink link="@Links[2]" />
+            </ul>
+        </div>
     </div>
-
 </nav>
