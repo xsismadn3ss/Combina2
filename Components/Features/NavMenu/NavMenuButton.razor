@@ -1,0 +1,44 @@
+@inject NavMenuState State
+
+<button class="@buttonClass" @onclick="HandleClick">
+    <div class="@iconClass">
+        <SvgIcon Name="new" Size="40px"
+                 Color="@($"{((State.MenuVisible) ? "rgb(30,30,30, 1)" : "rgba(30,30,30, 0.9)")}")" />
+    </div>
+</button>
+
+
+@code {
+    private string buttonClass = "menu-button";
+    private string iconClass = "icon";
+
+    private async Task HandleClick()
+    {
+        await AnimateButton();
+        AnimateIcon();
+        State.ToggleMenu();
+    }
+
+    private async Task AnimateButton()
+    {
+        buttonClass = "pulse-button menu-button";
+        await Task.Delay(200);
+        buttonClass = "menu-button";
+    }
+
+    private void AnimateIcon()
+    {
+        if (State.MenuVisible) iconClass = "icon icon-selected";
+        else iconClass = "icon";
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+    }
+}

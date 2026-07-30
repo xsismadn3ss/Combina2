@@ -1,33 +1,4 @@
-@inject NavMenuState State
-
-
 <NavMenuLinks />
 <div class="NavMenu">
-    <button class="@style" @onclick="AnimateClick">
-        <div class="icon">
-            <SvgIcon Name="sparkles" Color="@($"{((State.MenuVisible)? "rgba(var(--primary), 1)": "rgba(var(--primary), 0.8)")}")"/>
-        </div>
-    </button>
+    <NavMenuButton />
 </div>
-
-@code {
-    private string style = "menu-button";
-
-    private async Task AnimateClick()
-    {
-        style = "pulse-button menu-button";
-        await Task.Delay(200);
-        style = "menu-button";
-        State.ToggleMenu();
-    }
-
-    protected override void OnInitialized()
-    {
-        State.OnChange += StateHasChanged;
-    }
-
-    public void Dispose()
-    {
-        State.OnChange -= StateHasChanged;
-    }
-}

@@ -1,0 +1,50 @@
+.menu-button {
+    transform: translate(0, -1.4rem);
+    border: rgb(var(--secondary)) solid 3px;
+    border-radius: 0.8rem;
+    background-color: rgba(var(--secondary), 0.3);
+    backdrop-filter: blur(10px);
+    margin: 0;
+    outline: none;
+    cursor: pointer;
+    transition: 0.3s ease-in;
+}
+
+@keyframes pulse {
+    0% {
+        transform: translate(0, -1.4rem)
+    }
+
+    50% {
+        transform: scale(1.1, 1.1) translate(0, -1.3rem)
+    }
+
+    100% {
+        transform: translate(0, -1.4rem)
+    }
+}
+
+.pulse-button {
+    animation: pulse 0.35s ease;
+}
+
+
+.icon {
+    transform: rotate(0deg);
+    transition: 0.3s cubic-bezier(0.23, 1, 0.320, 1);
+}
+
+@keyframes rotateIcon {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(30deg);
+    }
+}
+
+.icon-selected {
+    transform: rotate(30deg);
+    animation: rotateIcon;
+}
