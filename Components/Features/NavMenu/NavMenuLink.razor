@@ -1,0 +1,11 @@
+@code {
+    [Parameter]
+    public required LinkModel link { get; set; }
+}
+
+<li class="link-item">
+    <div class="link-icon">
+        <SvgIcon Name="@link.IconName" Size="30px" Color="rgba(var(--primary), 0.5)" />
+    </div>
+    <a href="@link.Href">@link.Name</a>
+</li>

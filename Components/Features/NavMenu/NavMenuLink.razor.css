@@ -1,0 +1,24 @@
+.invisible {
+    opacity: 0%;
+}
+
+
+.link-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+    margin-inline: 0.5rem;
+}
+
+li {
+    color: inherit;
+
+    a {
+        text-decoration: none;
+        color: inherit;
+        all: unset;
+        cursor: pointer;
+    }
+}
