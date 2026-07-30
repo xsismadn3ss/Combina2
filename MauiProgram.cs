@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Combina2.Components.Features.NavMenu;
+using Microsoft.Extensions.Logging;
 
 namespace Combina2;
 
@@ -15,6 +16,7 @@ public static class MauiProgram
 			});
 
 		builder.Services.AddMauiBlazorWebView();
+		builder.Services.AddSingleton<NavMenuState>();
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();
