@@ -1,35 +1,30 @@
 @inject NavMenuState State
 
-<button class="@buttonClass" @onclick="HandleClick">
-    <div class="@iconClass">
-        <SvgIcon Name="new" Size="40px"
-                 Color="@($"{((State.MenuVisible) ? "rgba(var(--primary), 1)" : "rgba(var(--primary), 0.6)")}")" />
+<button class="menu-button @buttonClass" @onclick="HandleClick">
+    <div class="fade @iconClass">
+        <SvgIcon Name="swatch-book" Size="40px"
+                 Color="@iconColor" />
     </div>
 </button>
 
 
 @code {
-    private string buttonClass = "menu-button";
-    private string iconClass = "icon";
+    private string buttonClass = "";
+    private string iconClass => State.MenuVisible ? "rotateR" : "rotateL";
+    private string iconColor => State.MenuVisible ? "rgba(var(--primary), 0.8)" : "rgba(var(--primary), 0.6)";
 
     private async Task HandleClick()
     {
         await AnimateButton();
-        AnimateIcon();
         State.ToggleMenu();
     }
 
-    private async Task AnimateButton()
+    protected async Task AnimateButton()
     {
-        buttonClass = "pulse-button menu-button";
-        await Task.Delay(200);
-        buttonClass = "menu-button";
-    }
+        buttonClass = "pulse";
+        await Task.Delay(300);
+        buttonClass = "";
 
-    private void AnimateIcon()
-    {
-        if (State.MenuVisible) iconClass = "icon icon-selected";
-        else iconClass = "icon";
     }
 
     protected override void OnInitialized()

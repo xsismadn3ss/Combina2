@@ -1,22 +1,28 @@
 .menu-button {
-    transform: translate(0, -1.4rem);
-    border: rgb(var(--secondary)) solid 3px;
+    transform: scale(1) translate(0, -1.4rem);
+    border: rgba(var(--primary), 0.5) solid 3px;
     border-radius: 0.8rem;
-    background-color: rgba(var(--secondary), 0.3);
-    backdrop-filter: blur(10px);
+    padding: 0.3rem;
+    padding-inline: 0.5rem;
+    background-color: rgba(var(--primary), 0.2);
+    backdrop-filter: blur(3px);
     margin: 0;
     outline: none;
     cursor: pointer;
-    transition: 0.3s ease-in;
+    transition: 0.3s cubic-bezier(0.23, 1, 0.320, 1);
 }
 
-@keyframes pulse {
+.fade {
+    transition: 0.3s cubic-bezier(0.23, 1, 0.320, 1);
+}
+
+@keyframes pulse{
     0% {
-        transform: translate(0, -1.4rem)
+        transform: translate(0, -1,4);
     }
 
-    50% {
-        transform: scale(1.1, 1.1) translate(0, -1.3rem)
+    50%{
+        transform: scale(1.1) translate(0, -1.4rem);
     }
 
     100% {
@@ -24,27 +30,14 @@
     }
 }
 
-.pulse-button {
-    animation: pulse 0.35s ease;
+.pulse {
+    animation: pulse 0.5s cubic-bezier(0.23, 1, 0.320, 1);
 }
 
-
-.icon {
-    transform: rotate(0deg);
-    transition: 0.3s cubic-bezier(0.23, 1, 0.320, 1);
-}
-
-@keyframes rotateIcon {
-    from {
-        transform: rotate(0deg);
-    }
-
-    to {
-        transform: rotate(30deg);
-    }
-}
-
-.icon-selected {
+.rotateR {
     transform: rotate(30deg);
-    animation: rotateIcon;
+}
+
+.rotateL{
+    transform: rotate(0deg);
 }
