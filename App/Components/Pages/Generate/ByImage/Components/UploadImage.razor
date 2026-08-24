@@ -1,0 +1,23 @@
+﻿@inject GBI_StateMachine StateMachine
+
+
+<InputFile OnChange="OnInputFileChange" />
+
+@code {
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        // Convertir a array de bytes
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(maxAllowedSize: 10_000_000).CopyToAsync(ms);
+        var originalBytes = ms.ToArray();
+
+        // Comprimir imagen
+        var compressedImage = ImageHelper.CompressImage(originalBytes, 50);
+
+        // Actualizar estado
+        StateMachine.SetImage(compressedImage);
+        StateMachine.SetImagePreview($"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}");
+    }
+}
