@@ -1,6 +1,6 @@
 .menu-button {
     transform: scale(1) translate(0, -1.4rem);
-    border: rgba(var(--primary), 0.5) solid 3px;
+    border: rgba(var(--primary), 1) solid 3px;
     border-radius: 0.8rem;
     padding: 0.3rem;
     padding-inline: 0.5rem;
