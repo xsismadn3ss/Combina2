@@ -29,4 +29,4 @@ class ColorConverter:
         s = max(0.0, min(100.0, s)) / 100.0
         l = max(0.0, min(100.0, l)) / 100.0
         r, g, b = colorsys.hls_to_rgb(h, l, s)
-        return ColorConverter.rgb_to_hex((int(r * 255), int(g * 255), int(b * 255)))
+        return ColorConverter.rgb_to_hex((round(r * 255), round(g * 255), round(b * 255)))
