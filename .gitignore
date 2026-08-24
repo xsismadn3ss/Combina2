@@ -1,3 +1,6 @@
 .vs
 obj
 bin
+uv.lock
+*pyc
+__pycache__
