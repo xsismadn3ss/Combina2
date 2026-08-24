@@ -2,7 +2,7 @@ from typing import List, Optional
 from enum import Enum
 from pydantic import BaseModel, Field
 
-#1. DTOs (Data Transfer Objects) Pydantic Schemas
+#DTOs (Data Transfer Objects) Pydantic Schemas
 class ColorRole(str, Enum):
     PRIMARY = "primary"
     SECONDARY = "secondary"
