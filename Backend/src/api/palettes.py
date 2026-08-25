@@ -50,3 +50,19 @@ async def generate_harmonic_palette(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+#Endpoint Obtener Opciones de Paletas
+@router.get(
+    "/options",
+    response_model=list[str],
+    summary="Obtener opciones de paletas disponibles",
+    description="Devuelve una lista dinámica con los tipos de armonías (paletas) que el Sistema Experto soporta.",
+    response_description="Lista de cadenas de texto con los identificadores de las paletas."
+)
+async def get_palette_options():
+    """
+    Endpoint para devolver el listado de opciones de paletas de colores.
+    Extrae los valores dinámicamente del Enum HarmonyType.
+    """
+    # Extraemos solo el 'value' de cada elemento del Enum
+    return [harmony.value for harmony in HarmonyType]
