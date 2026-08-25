@@ -103,3 +103,22 @@ def test_get_palette_options_success():
     assert HarmonyType.TRIADIC.value in data
     assert HarmonyType.ANALOGOUS.value in data
     assert HarmonyType.MONOCHROMATIC.value in data
+
+
+def test_get_color_roles_success():
+    """
+    Criterio de Aceptación: Respuesta 200 OK y lista de roles devuelta.
+    Verifica que el endpoint devuelva los roles de color soportados.
+    """
+    response = client.get("/api/v1/palettes/roles")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verificamos que sea una lista
+    assert isinstance(data, list)
+    
+    # Validamos que al menos contenga algunos de los roles clave
+    assert ColorRole.PRIMARY.value in data
+    assert ColorRole.COMPLEMENTARY.value in data
+    assert ColorRole.ACCENT.value in data
