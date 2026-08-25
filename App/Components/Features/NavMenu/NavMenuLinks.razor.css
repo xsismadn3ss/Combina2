@@ -9,10 +9,10 @@
 }
 
 .links-container {
-    background-color: rgba(var(--secondary), 0.4);
+    background-color: rgba(var(--secondary), 0.8);
     backdrop-filter: blur(3px);
     transform: translate(0, -1.1rem);
-    border: rgb(var(--secondary)) 3px solid;
+    border: rgb(var(--primary)) 3px solid;
     border-radius: 1rem;
     padding: 1rem;
     color: rgb(var(--font-color));
