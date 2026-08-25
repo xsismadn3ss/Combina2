@@ -84,3 +84,22 @@ def test_generate_harmonic_missing_required_fields():
     
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == ["body", "colors"]
+
+def test_get_palette_options_success():
+    """
+    Criterio de Aceptación: Respuesta 200 OK y lista de opciones devuelta.
+    Verifica que el endpoint devuelva las armonías soportadas basándose en el Enum.
+    """
+    response = client.get("/api/v1/palettes/options")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verificamos que sea una lista
+    assert isinstance(data, list)
+    
+    # Verificamos que contenga las opciones esperadas
+    assert HarmonyType.COMPLEMENTARY.value in data
+    assert HarmonyType.TRIADIC.value in data
+    assert HarmonyType.ANALOGOUS.value in data
+    assert HarmonyType.MONOCHROMATIC.value in data
