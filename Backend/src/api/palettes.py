@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
-from src.schemas.palette import CreatePaletteRequest, PaletteResponse, HarmonyType
+from src.schemas.palette import CreatePaletteRequest, PaletteResponse, HarmonyType, ColorRole
 from src.services.palette_generator import ExpertSystemPaletteGenerator
+
 
 router = APIRouter(prefix="/api/v1/palettes", tags=["Generador de Paletas"])
 se_generator = ExpertSystemPaletteGenerator()
@@ -66,3 +67,20 @@ async def get_palette_options():
     """
     # Extraemos solo el 'value' de cada elemento del Enum
     return [harmony.value for harmony in HarmonyType]
+
+
+# EndPoint Obtener Roles de Colores
+
+@router.get(
+    "/roles",
+    response_model=list[str],
+    summary="Obtener roles de colores disponibles",
+    description="Devuelve una lista dinámica con los roles de color que el sistema puede asignar (primary, secondary, accent, etc.).",
+    response_description="Lista de cadenas de texto con los identificadores de los roles."
+)
+async def get_color_roles():
+    """
+    Endpoint para devolver el listado de roles de colores.
+    Extrae los valores dinámicamente del Enum ColorRole.
+    """
+    return [role.value for role in ColorRole]
