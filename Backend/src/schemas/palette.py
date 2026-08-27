@@ -1,6 +1,8 @@
-from typing import List, Optional
 from enum import Enum
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
+
 
 # 1. DTOs (Data Transfer Objects) Pydantic Schemas
 class ColorRole(str, Enum):
@@ -14,9 +16,19 @@ class ColorRole(str, Enum):
     TRIADIC_2 = "triadic_2"
     PREDOMINANT = "predominant"
 
+
 class Color(BaseModel):
-    value: str = Field(..., json_schema_extra={"example": "#FF5733"}, description="Código hexadecimal del color")
-    role: str = Field(..., json_schema_extra={"example": "primary"}, description="Rol del color en la paleta")
+    value: str = Field(
+        ...,
+        json_schema_extra={"example": "#FF5733"},
+        description="Código hexadecimal del color",
+    )
+    role: str = Field(
+        ...,
+        json_schema_extra={"example": "primary"},
+        description="Rol del color en la paleta",
+    )
+
 
 class HarmonyType(str, Enum):
     COMPLEMENTARY = "complementario"
@@ -24,18 +36,26 @@ class HarmonyType(str, Enum):
     ANALOGOUS = "analogo"
     MONOCHROMATIC = "monocromatica"
 
+
 class CreatePaletteRequest(BaseModel):
-    colors: List[str] = Field(
-        ..., 
-        min_length=1, 
-        json_schema_extra={"example": ["#FF5733"]}, 
-        description="Colores base en formato hexadecimal"
+    colors: list[str] = Field(
+        ...,
+        min_length=1,
+        json_schema_extra={"example": ["#FF5733"]},
+        description="Colores base en formato hexadecimal",
     )
-    harmony: Optional[HarmonyType] = Field(
+    harmony: HarmonyType | None = Field(
         default=HarmonyType.COMPLEMENTARY,
-        description="Tipo de armonia matemática a aplicar (opcional)"
+        description="Tipo de armonia matemática a aplicar (opcional)",
     )
 
+
 class PaletteResponse(BaseModel):
-    type: str = Field(..., json_schema_extra={"example": "triada"}, description="Tipo de paleta generada o identificada")
-    colors: List[Color] = Field(..., description="Listado estructurado de objetos Color")
+    type: str = Field(
+        ...,
+        json_schema_extra={"example": "triada"},
+        description="Tipo de paleta generada o identificada",
+    )
+    colors: list[Color] = Field(
+        ..., description="Listado estructurado de objetos Color"
+    )
