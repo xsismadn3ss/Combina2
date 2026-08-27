@@ -1,18 +1,17 @@
 ﻿@using Combina2.Components.Features
 @inject GBI_StateMachine StateMachine
 
-
-@if (!String.IsNullOrEmpty(StateMachine.FormState.ImagePreview))
-{
-    <div class="image-preiew-container">
-        <img class="image-preview" src="@StateMachine.FormState.ImagePreview" />
-        <span class=".remove-btn" @onclick="RemoveImage">
-            <SvgIcon Name="x" Color="white" />
-        </span>
+<div class="image-preiew-container" style="--preview-opacity:@PreviewOpacity">
+    <img class="image-preview" src="@StateMachine.FormState.ImagePreview" />
+    <div class="image-remove-btn" @onclick="RemoveImage">
+        <SvgIcon Name="x" Color="white" />
     </div>
-}
+</div>
 
 @code {
+    private string PreviewOpacity =>
+            String.IsNullOrEmpty(StateMachine.FormState.ImagePreview) ? "0.0" : "1.0";
+
     private async Task RemoveImage()
     {
         await StateMachine.Reset();

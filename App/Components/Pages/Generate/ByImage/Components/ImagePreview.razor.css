@@ -3,24 +3,27 @@
     display: flex;
     justify-content: center;
     position: relative;
+    transition: all ease-in 250ms;
+    opacity: var(--preview-opacity)
+}
 
-    span {
-        transform: translate(-0.2rem, -0.7rem);
-        height: 30px;
-        width: 30px;
-        justify-content: center;
-        background: rgba(var(--secondary), 0.5);
-        backdrop-filter: blur(5px);
-        border: 2px solid rgb(var(--primary));
-        border-radius: 100%;
-        padding-inline: 0.1rem;
-        padding-block: 0rem;
-        cursor: pointer;
-
-        * {
-            transform: translateY(0.05rem);
-        }
-    }
+.image-remove-btn {
+    height: 30px;
+    width: 30px;
+    justify-content: center;
+    background: rgba(var(--secondary), 0.3);
+    backdrop-filter: blur(5px);
+    border: 2px solid rgb(var(--primary));
+    border-radius: 100%;
+    cursor: pointer;
+    position: absolute;
+    right: 0;
+    width: 30px;
+    transform: translate(0.2rem,-0.6rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
 .image-preview {
@@ -30,5 +33,4 @@
     border-radius: 1rem;
     box-shadow: 0px 0px 20px 5px rgba(var(--secondary));
     overflow: hidden;
-    transform: translateX(1rem);
 }
