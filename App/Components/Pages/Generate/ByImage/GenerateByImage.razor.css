@@ -1,0 +1,6 @@
+/* CSS for GenerateByImage component */
+.gbi-form {
+    border: 1px solid green;
+    height: 80vh;
+    position: relative;
+}
