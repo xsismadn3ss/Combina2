@@ -22,13 +22,17 @@
         await file.OpenReadStream(maxAllowedSize: 10_000_000).CopyToAsync(ms);
         var originalBytes = ms.ToArray();
 
+        // Actualizar estado a subiendo imagen
+        StateMachine.FormState.Loading = true; // Notificar que se esta cargando la imagen
+        StateMachine.NotifyStateChanged();
+
         // Comprimir imagen
         var compressedImage = ImageHelper.CompressImage(originalBytes, 50);
-
         var imagePreview = $"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}";
         // Actualizar estado
         StateMachine.FormState.Image = compressedImage;
         StateMachine.FormState.ImagePreview = imagePreview;
+        StateMachine.FormState.Loaded = true; // Agregar que ya se cargó la imagen
         StateMachine.NotifyStateChanged();
 
     }
