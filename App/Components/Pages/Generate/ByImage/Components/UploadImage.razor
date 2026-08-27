@@ -1,9 +1,18 @@
-﻿@inject GBI_StateMachine StateMachine
+﻿@using Combina2.Components.Features
+@inject GBI_StateMachine StateMachine
 
-
-<InputFile OnChange="OnInputFileChange" />
+<div class="upload-img-container" style="--img-visible:@btnOpacity;">
+    <label for="file-input">
+        <div class="upload-img-button {@btnOpacity}">
+            <SvgIcon Name="image-plus" Color="white" Size="50px" />
+        </div>
+    </label>
+    <InputFile id="file-input" OnChange="OnInputFileChange" hidden="hidden" />
+</div>
 
 @code {
+    private string btnOpacity => StateMachine.Image == null ? "1.0" : "0.0";
+
     private async Task OnInputFileChange(InputFileChangeEventArgs e)
     {
         var file = e.File;
@@ -19,5 +28,15 @@
         // Actualizar estado
         StateMachine.SetImage(compressedImage);
         StateMachine.SetImagePreview($"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}");
+    }
+
+    protected override void OnInitialized()
+    {
+        StateMachine.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        StateMachine.OnChange -= StateHasChanged;
     }
 }
