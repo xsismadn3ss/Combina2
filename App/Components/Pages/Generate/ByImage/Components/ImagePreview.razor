@@ -2,10 +2,10 @@
 @inject GBI_StateMachine StateMachine
 
 
-@if (!String.IsNullOrEmpty(StateMachine.ImagePreview))
+@if (!String.IsNullOrEmpty(StateMachine.FormState.ImagePreview))
 {
     <div class="image-preiew-container">
-        <img class="image-preview" src="@StateMachine.ImagePreview" />
+        <img class="image-preview" src="@StateMachine.FormState.ImagePreview" />
         <span class=".remove-btn" @onclick="RemoveImage">
             <SvgIcon Name="x" Color="white" />
         </span>
