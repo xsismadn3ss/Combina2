@@ -8,7 +8,7 @@ from src.schemas.palette import ColorRole
 client = TestClient(app)
 
 
-def get_color_roles():
+def test_get_color_roles():
     """Listar colores"""
     response = client.get(f"{APICOnfig.prefix}/colors/roles")
 
