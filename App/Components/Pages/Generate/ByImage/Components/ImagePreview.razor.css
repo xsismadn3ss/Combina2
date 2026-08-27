@@ -1,0 +1,34 @@
+/* CSS for ImagePreview component */
+.image-preiew-container {
+    display: flex;
+    justify-content: center;
+    position: relative;
+
+    span {
+        transform: translate(-0.2rem, -0.7rem);
+        height: 30px;
+        width: 30px;
+        justify-content: center;
+        background: rgba(var(--secondary), 0.5);
+        backdrop-filter: blur(5px);
+        border: 2px solid rgb(var(--primary));
+        border-radius: 100%;
+        padding-inline: 0.1rem;
+        padding-block: 0rem;
+        cursor: pointer;
+
+        * {
+            transform: translateY(0.05rem);
+        }
+    }
+}
+
+.image-preview {
+    max-width: 90vw;
+    height: auto;
+    border: 1px solid rgba(var(--primary));
+    border-radius: 1rem;
+    box-shadow: 0px 0px 20px 5px rgba(var(--secondary));
+    overflow: hidden;
+    transform: translateX(1rem);
+}
