@@ -1,0 +1,8 @@
+﻿<div class="spinner" style="--spinner-size:@Size">
+    <SvgIcon Name="loader" Size="@Size" Color="@Color" Shadow="false" />
+</div>
+
+@code {
+    [Parameter] public string Size { get; set; } = "30px";
+    [Parameter] public string Color { get; set; } = "white";
+}
