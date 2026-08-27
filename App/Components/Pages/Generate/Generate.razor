@@ -1,8 +1,15 @@
-@page "/generate"
+﻿@page "/generate/by_image"
+@using Combina2.Components.Pages.Generate.Components
 
-<ReturnTitle Title="Generar"/>
+<ReturnTitle title="Generate" />
 
-<section>
-    <a href="/generate/by_colors">Seleccionar colores</a>
-    <a href="/generate/by_image">Tomar una fotografía</a>
+<section class="container">
+    <div class="gbi-form">
+        <UploadImage />
+        <ImagePreview />
+    </div>
 </section>
+
+@code {
+
+}

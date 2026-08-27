@@ -1,5 +1,5 @@
 ﻿using Combina2.Components.Features.NavMenu;
-using Combina2.Components.Pages.Generate.ByImage;
+using Combina2.Components.Pages.ByImage;
 using Microsoft.Extensions.Logging;
 using SkiaSharp.Views.Maui.Controls.Hosting;
 

@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Combina2.Components.Pages.Generate.ByImage
+namespace Combina2.Components.Pages.ByImage
 {
-    internal static class InjectGenerateByImage
+    internal static class InjectGenerate
     {
         /// <summary>
         /// Inyectar servicios para la vista Generate By Image
@@ -14,7 +14,7 @@ namespace Combina2.Components.Pages.Generate.ByImage
         public static IServiceCollection AddGBI_Services(this IServiceCollection services)
         {
             // Inyectar servicio state machine
-            services.AddSingleton<GBI_StateMachine>();
+            services.AddSingleton<GStateMachine>();
 
             return services;
         }

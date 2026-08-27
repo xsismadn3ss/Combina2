@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Combina2.Components.Pages.Generate.ByImage
+namespace Combina2.Components.Pages
 {
     public sealed class FormState
     {
@@ -41,7 +41,7 @@ namespace Combina2.Components.Pages.Generate.ByImage
     /// Servicio para manejar estado del componente
     /// El servicio almacena el flujo del formulario
     /// </summary>
-    public class GBI_StateMachine
+    public class GStateMachine
     {
         // Estado de la imagen cargada
         public FormState FormState { get; set; } = new FormState();
