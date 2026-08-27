@@ -1,5 +1,8 @@
 from fastapi import FastAPI
-from src.api.palettes import router as palettes_router
+
+from src.routes.pallete import router as pallete_router
+from src.routes.colors import router as colors_router
+from src.routes.harmoy import router as harmony_router
 
 app = FastAPI(
     title="Combina2 Sistemas Expertos API",
@@ -7,5 +10,6 @@ app = FastAPI(
     description="Backend FastAPI para la generación e identificación armónica de colores."
 )
 
-# ¡Esta es la línea clave que le falta a tu app para mostrar el endpoint!
-app.include_router(palettes_router)
+app.include_router(pallete_router)
+app.include_router(colors_router)
+app.include_router(harmony_router)
