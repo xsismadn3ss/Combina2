@@ -16,7 +16,7 @@ namespace Combina2.Components.Pages.Generate.ByImage
         /// </summary>
         public byte[]? Image { get; private set; }
 
-        public void SetImage(byte[] image)
+        public void SetImage(byte[]? image)
         {
             Image = image;
             NotifyStateChanged();
@@ -63,6 +63,7 @@ namespace Combina2.Components.Pages.Generate.ByImage
         public async Task Reset()
         {
             this.Image = null;
+            this.ImagePreview = String.Empty;
             this.Colors = [];
             this.Loading = false;
             this.Loaded = false;
