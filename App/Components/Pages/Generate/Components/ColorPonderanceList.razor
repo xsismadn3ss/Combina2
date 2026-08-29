@@ -1,0 +1,50 @@
+@using Combina2.Models
+@using Combina2.Services
+@inject IColorPonderanceService ColorPonderanceService
+@inject GStateMachine State
+
+@if (State.FormState.Image != null && State.FormState.Image.Length == 0)
+{
+    <p>No hay colores freucnetas</p>
+}
+else if (State.FormState.Image != null && State.FormState.Image.Length > 0)
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Color</th>
+                <th>Porcentaje</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var color in Colors)
+            {
+                <tr>
+                    <td class="color-circle" style="background-color: #@color.Color;"></td>
+                    <td>@color.Percentage.ToString("F2")%</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IEnumerable<ColorPonderance> Colors { get; set; } = [];
+
+    protected override void OnParametersSet()
+    {
+        if (State.FormState.Image == null) return;
+        else if (State.FormState.Image.Length == 0) return;
+        Colors = ColorPonderanceService.GetPonderances(State.FormState.Image);
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+    }
+}
