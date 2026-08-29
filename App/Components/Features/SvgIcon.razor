@@ -9,7 +9,12 @@
 
     protected override void OnParametersSet()
     {
-        var path = Path.Combine("wwwroot", "svg", $"{Name}.svg");
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "wwwroot",
+            "svg",
+            $"{Name}.svg"
+        );
         if (File.Exists(path))
         {
             SvgContent = File.ReadAllText(path);
