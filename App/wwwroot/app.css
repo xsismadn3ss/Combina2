@@ -98,3 +98,12 @@ html, body {
     margin-inline: 0.5rem;
     margin-block: 0.5rem;
 }
+
+@keyframes fadeIn{
+    from{
+        opacity: 0;
+    }
+    to{
+        opacity: 1;
+    }
+}
