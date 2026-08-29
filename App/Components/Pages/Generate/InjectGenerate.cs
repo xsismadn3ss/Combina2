@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using Combina2.Services;
 
 namespace Combina2.Components.Pages.ByImage
 {
@@ -15,6 +16,7 @@ namespace Combina2.Components.Pages.ByImage
         {
             // Inyectar servicio state machine
             services.AddSingleton<GStateMachine>();
+            services.AddSingleton<IColorPonderanceService, ColorPonderanceService>();
 
             return services;
         }
