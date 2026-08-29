@@ -13,8 +13,12 @@
 <section class="return-title-safe-area"></section>
 
 <script>
-    function goBack(){
-        history.back();
+    function goBack() {
+        if (history.length > 0) {
+            history.back()
+        } else {
+            window.location = '/'
+        }
     }
 </script>
 

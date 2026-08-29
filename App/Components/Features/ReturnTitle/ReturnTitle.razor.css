@@ -1,7 +1,8 @@
 /* CSS for ReturnTitle component */
 .return-title-container{
     display: flex;
-    margin-block: 0.5rem;
+    margin-top: 2rem;
+    margin-bottom: 2rem;
     padding-inline: 0.5rem;
     justify-content:space-between;
     position: fixed;
@@ -38,7 +39,7 @@
     position: fixed;
     width: 100%;
     z-index: 15;
-    box-shadow: 0px 10px 60px 65px rgba(var(--bg-color));
+    box-shadow: 0px 10px 65px 70px rgba(var(--bg-color));
 }
 
 .return-title-safe-area{
