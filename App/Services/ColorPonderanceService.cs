@@ -3,6 +3,10 @@ using SkiaSharp;
 
 namespace Combina2.Services;
 
+/// <summary>
+/// Servicio para obtener porcentaje de ocurrencias de colores
+/// dentro de una imagen
+/// </summary>
 public class ColorPonderanceService : IColorPonderanceService
 {
     public IEnumerable<ColorPonderance> GetPonderances(byte[] imageBytes)
