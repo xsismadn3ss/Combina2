@@ -1,9 +1,9 @@
 ﻿@using Combina2.Components.Features
-@inject GStateMachine StateMachine
+@inject GStateMachine State
 
-<div class="upload-img-container" style="--img-visible:@btnOpacity;">
+<div class="upload-img-container" style="--btn-visible:@btnOpacity;">
     <label for="file-input">
-        <div class="upload-img-button {@btnOpacity}">
+        <div class="upload-img-button @btnStyle">
             <SvgIcon Name="image-plus" Color="white" Size="50px" />
         </div>
     </label>
@@ -12,7 +12,10 @@
 
 @code {
     private string btnOpacity =>
-        StateMachine.FormState.Image == null && !StateMachine.FormState.Loading ? "1.0" : "0.0";
+        State.FormState.Image == null && !State.FormState.Loading ? "1.0" : "0.0";
+
+    private string btnStyle =>
+        State.FormState.Image != null ? "btn-minimal": "btn-normal";
 
     private async Task OnInputFileChange(InputFileChangeEventArgs e)
     {
@@ -24,8 +27,8 @@
         var originalBytes = ms.ToArray();
 
         // Actualizar estado a subiendo imagen
-        StateMachine.FormState.Loading = true; // Notificar que se esta cargando la imagen
-        StateMachine.NotifyStateChanged();
+        State.FormState.Loading = true; // Notificar que se esta cargando la imagen
+        State.NotifyStateChanged();
 
         await Task.Yield();
 
@@ -33,20 +36,20 @@
         var compressedImage = await Task.Run(() => ImageHelper.CompressImage(originalBytes, 50));
         var imagePreview = $"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}";
         // Actualizar estado
-        StateMachine.FormState.Image = compressedImage;
-        StateMachine.FormState.ImagePreview = imagePreview;
-        StateMachine.FormState.Loaded = true; // Agregar que ya se cargó la imagen
-        StateMachine.NotifyStateChanged();
+        State.FormState.Image = compressedImage;
+        State.FormState.ImagePreview = imagePreview;
+        State.FormState.Loaded = true; // Agregar que ya se cargó la imagen
+        State.NotifyStateChanged();
 
     }
 
     protected override void OnInitialized()
     {
-        StateMachine.OnChange += StateHasChanged;
+        State.OnChange += StateHasChanged;
     }
 
     public void Dispose()
     {
-        StateMachine.OnChange -= StateHasChanged;
+        State.OnChange -= StateHasChanged;
     }
 }

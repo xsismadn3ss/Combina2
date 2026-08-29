@@ -14,11 +14,21 @@
     padding: 2rem;
     background: rgba(var(--secondary), 0.7);
     transition: all ease-in 300ms;
-    opacity: var(--img-visible);
+    opacity: var(--btn-visible);
     animation: fadeIn ease-in-out 0.3s;
     display: flex;
     width: fit-content;
 }
+
+.btn-normal{
+    scale: 1;
+    transition: all ease 200ms;
+}
+
+.btn-minimal{
+    scale: 0;
+}
+
 
 .upload-img-button:hover{
     cursor:pointer;
