@@ -3,46 +3,54 @@ using SkiaSharp;
 
 namespace Combina2.Services;
 
-/// <summary>
-/// Servicio para obtener porcentaje de ocurrencias de colores
-/// dentro de una imagen
-/// </summary>
 public class ColorPonderanceService : IColorPonderanceService
 {
+    const int MaxDimension = 128;
+    const byte Mask = 0xF0;
+
     public IEnumerable<ColorPonderance> GetPonderances(byte[] imageBytes)
     {
-        using var bitmap = SKBitmap.Decode(imageBytes);
+        using var image = SKImage.FromEncodedData(imageBytes);
+        if (image is null)
+            return [];
 
-        var colorCounts = new Dictionary<string, int>();
-        int totalPixels = bitmap.Width * bitmap.Height;
+        int origW = image.Width;
+        int origH = image.Height;
+        float scale = MathF.Sqrt((float)(MaxDimension * MaxDimension) / (origW * origH));
+        int targetW = Math.Max(1, (int)(origW * scale));
+        int targetH = Math.Max(1, (int)(origH * scale));
 
-        // Recorrer pixeles para contarlos uno a uno
-        foreach (var pixel in bitmap.Pixels)
+        var info = new SKImageInfo(targetW, targetH, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using var bitmap = new SKBitmap(info);
+        using var canvas = new SKCanvas(bitmap!);
+        var sampling = new SKSamplingOptions(SKFilterMode.Linear);
+        canvas.DrawImage(image, new SKRect(0, 0, targetW, targetH), sampling);
+        canvas.Flush();
+
+        int totalPixels = targetW * targetH;
+        var colorCounts = new Dictionary<int, int>();
+        var span = bitmap.GetPixelSpan();
+        int rowBytes = bitmap.RowBytes;
+
+        for (int y = 0; y < targetH; y++)
         {
-            string hex = $"{pixel.Red:X2}{pixel.Green:X2}{pixel.Blue:X2}";
-
-            if (colorCounts.TryGetValue(hex, out int value))
+            int rowOffset = y * rowBytes;
+            for (int x = 0; x < targetW; x++)
             {
-                // Aumentar una unidad cuando ya existe la clave en el diccionario
-                colorCounts[hex] = ++value;
+                int i = rowOffset + x * 4;
+                int key = ((span[i] & Mask) << 16) | ((span[i + 1] & Mask) << 8) | (span[i + 2] & Mask);
+                colorCounts.TryGetValue(key, out int count);
+                colorCounts[key] = count + 1;
             }
-            else
-            {
-                // Declarar la clave en el diccionario
-                colorCounts[hex] = 1;
-            }
-
-
         }
-        // Calcular ponderancias
-        var ponderances = colorCounts.Select(
-            kvp => new ColorPonderance
-            {
-                Color = kvp.Key,
-                Percentage = (double)kvp.Value / totalPixels * 10
-            }).OrderByDescending(c => c.Percentage);
 
-        // Obtener solo los primeros diez más frecuentes
-        return ponderances.Take(10);
+        return colorCounts
+            .Select(kvp => new ColorPonderance
+            {
+                Color = kvp.Key.ToString("X6"),
+                Percentage = (double)kvp.Value / totalPixels * 100
+            })
+            .OrderByDescending(c => c.Percentage)
+            .Take(10);
     }
 }
