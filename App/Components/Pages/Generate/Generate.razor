@@ -1,5 +1,6 @@
 ﻿@page "/generate"
 @using Combina2.Components.Pages.Generate.Components
+@inject GStateMachine StateMachine
 
 <ReturnTitle title="Generate" />
 
@@ -11,5 +12,17 @@
 </section>
 
 @code {
-
+    // Hacer reset al servicio cuando se desmonta el componente
+    protected override async Task OnInitializedAsync()
+    {
+        await StateMachine.Reset();
+    }
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            StateMachine.OnAfterRender();
+        }
+    }
+}
 }

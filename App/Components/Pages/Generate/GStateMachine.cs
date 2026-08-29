@@ -55,5 +55,10 @@ namespace Combina2.Components.Pages
 
         public event Action? OnChange;
         public void NotifyStateChanged() => OnChange?.Invoke();
+
+        public void OnAfterRender()
+        {
+            NotifyStateChanged();
+        }
     }
 }
