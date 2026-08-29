@@ -64,6 +64,9 @@
 
         <!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
         <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+
+        <!-- SVG Assets for wwwroot/svg -->
+        <MauiAsset Include="wwwroot\svg\*" LogicalName="wwwroot/svg/%(Filename)%(Extension)" />
     </ItemGroup>
 
     <ItemGroup>
