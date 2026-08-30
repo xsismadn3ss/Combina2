@@ -1,13 +1,15 @@
 ﻿@using Combina2.Components.Features
 @inject GStateMachine State
 
-<div class="upload-img-container" style="--btn-visible:@btnOpacity;">
-    <label for="file-input">
-        <div class="upload-img-button @btnStyle">
-            <SvgIcon Name="image-plus" Color="white" Size="50px" />
-        </div>
-    </label>
-    <InputFile id="file-input" OnChange="OnInputFileChange" hidden="hidden" accept="image/*" />
+<div class="upload-img-container @btnStyle" style="--btn-visible:@btnOpacity;">
+    <div class="upload-img-row">
+        <label for="file-input">
+            <div class="upload-img-button">
+                <SvgIcon Name="image-plus" Color="white" Size="50px" />
+            </div>
+        </label>
+        <InputFile id="file-input" OnChange="OnInputFileChange" hidden="hidden" accept="image/*" />
+    </div>
 </div>
 
 @code {
@@ -15,7 +17,7 @@
         State.FormState.Image == null && !State.FormState.Loading ? "1.0" : "0.0";
 
     private string btnStyle =>
-        State.FormState.Image != null ? "btn-minimal": "btn-normal";
+        State.FormState.Image != null ? "btn-minimal" : "btn-normal";
 
     private async Task OnInputFileChange(InputFileChangeEventArgs e)
     {
@@ -33,8 +35,10 @@
         await Task.Yield();
 
         // Comprimir imagen
-        var compressedImage = await Task.Run(() => ImageHelper.CompressImage(originalBytes, 50));
-        var imagePreview = $"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}";
+        var compressedImage = await Task.Run(
+            () => ImageHelper.CompressImage(originalBytes, 50));
+        var imagePreview =
+            $"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}";
         // Actualizar estado
         State.FormState.Image = compressedImage;
         State.FormState.ImagePreview = imagePreview;
