@@ -19,7 +19,7 @@
             String.IsNullOrEmpty(StateMachine.FormState.ImagePreview) ? "0.0" : "1.0";
 
     private string SpinnerOpacity =>
-            StateMachine.FormState.Loading && !StateMachine.FormState.Loaded ? "1.0" : "0.0";
+            StateMachine.FormState.ImageLoading && !StateMachine.FormState.ImageLoaded ? "1.0" : "0.0";
 
     private async Task RemoveImage()
     {

@@ -19,17 +19,17 @@
     {
         // Si el color no esta en la lista se agrega y se ajusta el estilo
         var selectedColors = State.FormState.SelectedColors;
-        if (!selectedColors.Any(c => c.Color == color.Color))
+        if (!selectedColors.Any(c => c == color.Color))
         {
             selected = true;
-            State.FormState.SelectedColors.Add(color);
+            State.FormState.SelectedColors.Add(color.Color);
         }
         // Quitar color de la lista y ajustar estilo
         else
         {
             selected = false;
             var filteredColors =
-                selectedColors.Where(c => c.Color != color.Color).ToList();
+                selectedColors.Where(c => c != color.Color).ToList();
             State.FormState.SelectedColors = filteredColors;
         }
         State.NotifyStateChanged();

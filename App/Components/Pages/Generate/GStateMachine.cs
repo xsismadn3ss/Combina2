@@ -7,18 +7,35 @@ namespace Combina2.Components.Pages
 {
     public sealed class FormState
     {
-        public bool Loading { get; set; } = false;
-        public bool Loaded { get; set; } = false;
+        public bool ImageLoading { get; set; } = false;
+        public bool ImageLoaded { get; set; } = false;
+        /// <summary>
+        /// Arreglo de bytes de la imagen cargada
+        /// </summary>
         public byte[]? Image { get; set; }
+        /// <summary>
+        /// String Base64 de la imagen para mostrar como preview
+        /// </summary>
         public string ImagePreview { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Colores frecuentes en la imagen
+        /// </summary>
         public List<ColorPonderance> Colors { get; set; } = [];
-        public List<ColorPonderance> SelectedColors { get; set; } = [];
+        /// <summary>
+        /// Colores seleccionados
+        /// </summary>
+        public List<string> SelectedColors { get; set; } = [];
+
+        /// <summary>
+        /// Harmonia seleccionada para generar una paleta de colores
+        /// </summary>
+        public string Harmony { get; set; } = string.Empty;
 
         public void Reset()
         {
-            Loading = false;
-            Loaded = false;
+            ImageLoading = false;
+            ImageLoaded = false;
             Image = null;
             ImagePreview = string.Empty;
             Colors = [];

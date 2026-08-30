@@ -14,7 +14,7 @@
 
 @code {
     private string btnOpacity =>
-        State.FormState.Image == null && !State.FormState.Loading ? "1.0" : "0.0";
+        State.FormState.Image == null && !State.FormState.ImageLoading ? "1.0" : "0.0";
 
     private string btnStyle =>
         State.FormState.Image != null ? "btn-minimal" : "btn-normal";
@@ -29,7 +29,7 @@
         var originalBytes = ms.ToArray();
 
         // Actualizar estado a subiendo imagen
-        State.FormState.Loading = true; // Notificar que se esta cargando la imagen
+        State.FormState.ImageLoading = true; // Notificar que se esta cargando la imagen
         State.NotifyStateChanged();
 
         await Task.Yield();
@@ -42,7 +42,7 @@
         // Actualizar estado
         State.FormState.Image = compressedImage;
         State.FormState.ImagePreview = imagePreview;
-        State.FormState.Loaded = true; // Agregar que ya se cargó la imagen
+        State.FormState.ImageLoaded = true; // Agregar que ya se cargó la imagen
         State.NotifyStateChanged();
 
     }
