@@ -17,6 +17,7 @@ namespace Combina2.Components.Pages.Generate.Services
             // Inyectar servicio state machine
             services.AddSingleton<GStateMachine>();
             services.AddSingleton<IColorPonderanceService, ColorPonderanceService>();
+            services.AddSingleton<IHarmonyRepository, HarmonyDummyRepo>();
 
             return services;
         }
