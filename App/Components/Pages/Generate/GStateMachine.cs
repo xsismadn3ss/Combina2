@@ -25,7 +25,16 @@ namespace Combina2.Components.Pages
             SelectedColors = [];
         }
 
+        /// <summary>
+        /// Devuelve true cuando la imagen no es luna y si tiene bytes
+        /// </summary>
         public bool IsValidImage => Image != null && Image.Length > 0;
+
+        /// <summary>
+        /// Devuelve true cuando hay una imagen valida y hay más de dos colores seleccionados
+        /// </summary>
+        public bool IsValidForm =>
+            IsValidImage && SelectedColors.Count > 0;
     }
 
     public sealed class ResponseState
