@@ -9,8 +9,10 @@ namespace Combina2.Components.Pages
     {
         public bool Loading { get; set; } = false;
         public bool Loaded { get; set; } = false;
-        public byte[]? Image { get; set; } = null;
+        public byte[]? Image { get; set; }
         public string ImagePreview { get; set; } = string.Empty;
+
+        public List<ColorPonderance> Colors { get; set; } = [];
 
         public void Reset()
         {
@@ -18,7 +20,10 @@ namespace Combina2.Components.Pages
             Loaded = false;
             Image = null;
             ImagePreview = string.Empty;
+            Colors = [];
         }
+
+        public bool IsValidImage => Image != null && Image.Length > 0;
     }
 
     public sealed class ResponseState

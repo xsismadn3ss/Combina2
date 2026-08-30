@@ -6,6 +6,7 @@
 .colors-container {
     display: flex;
     flex-direction: column;
+    padding-bottom: 2rem;
 }
 
 /* breakpoints para .colors-container */
@@ -36,8 +37,8 @@
 }
 
 .color-item {
-    padding: 0.5rem;
     display: flex;
+    gap: 0.5rem;
     justify-content: space-between;
 
     p {

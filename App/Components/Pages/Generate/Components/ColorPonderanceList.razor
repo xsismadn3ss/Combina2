@@ -1,4 +1,3 @@
-@using Combina2.Models
 @using Combina2.Services
 @inject IColorPonderanceService ColorPonderanceService
 @inject GStateMachine State
@@ -9,18 +8,17 @@
 {
     <div class="colors-root">
         <div class="colors-container">
-            <h2>Colores frecuentes</h2>
+            <h2 style="margin: 0;">Colores frecuentes</h2>
             <p class="container-description">Selecciona dos colores o más para generar una paleta</p>
             <div class="colors-list">
-
-            @foreach (var color in Colors)
-            {
-                <div class="color-item">
-                    <div class="color-circle" style="background-color: #@color.Color;"></div>
-                    <p>#@color.Color</p>
-                    <p>@color.Percentage.ToString("F2")%</p>
-                </div>
-            }
+                @foreach (var color in State.FormState.Colors)
+                {
+                    <div class="color-item">
+                        <div class="color-circle" style="background-color: #@color.Color;"></div>
+                        <p>#@color.Color</p>
+                        <p>@color.Percentage.ToString("F2")%</p>
+                    </div>
+                }
             </div>
         </div>
     </div>
@@ -28,8 +26,6 @@
 
 
 @code {
-    private List<ColorPonderance> Colors { get; set; } = [];
-
     private bool Visible =>
         State.FormState.Loaded && State.FormState.Image != null;
 
@@ -40,9 +36,13 @@
 
     private async void OnStateChanged()
     {
-        if (State.FormState.Image is not { Length: > 0 }) return;
-        Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
-        await InvokeAsync(StateHasChanged);
+        if (State.FormState.IsValidImage)
+        {
+            State.FormState.Colors = 
+                ColorPonderanceService.GetPonderances(State.FormState.Image!).ToList();
+            await InvokeAsync(StateHasChanged);
+
+        }
     }
 
     public void Dispose()
