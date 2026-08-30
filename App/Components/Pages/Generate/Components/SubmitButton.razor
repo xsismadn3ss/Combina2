@@ -1,0 +1,21 @@
+@inject GStateMachine State
+
+<div class="g-button-container">
+    <button class="g-button @buttonStyle" disabled="@disableButton">Generar</button>
+</div>
+
+@code {
+    private bool disableButton => State.FormState.IsValidForm;
+
+    private string buttonStyle => disableButton ? "disabled" : "";
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+    }
+}

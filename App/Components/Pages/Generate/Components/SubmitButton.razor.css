@@ -1,0 +1,42 @@
+.g-button-container {
+    display: flex;
+    justify-content: center;
+}
+
+.g-button {
+    border: 3px solid rgba(var(--primary));
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    bottom: 0.5rem;
+    position: fixed;
+    color: white;
+    font-weight: bold;
+    font-size: medium;
+    background-color: rgba(var(--secondary), 0.5);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s cubic-bezier(0.075, 0.82, 0.165, 1);
+    cursor: pointer;
+}
+
+.disabled{
+    cursor:not-allowed;
+    background-color: rgba(var(--secondary), 0.2);
+    border-color: rgba(var(--primary), 0.2);
+}
+
+@media (max-width: 576px) {
+    .g-button{
+        width: 90vw;
+    }
+}
+@media (min-width: 577px) and (max-width: 992px) {
+    .g-button{
+        width: 70vw;
+    }
+}
+
+@media (min-width: 993px) {
+    .g-button{
+        width: 50vw;
+    }
+}
