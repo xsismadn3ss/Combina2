@@ -13,6 +13,7 @@ namespace Combina2.Components.Pages
         public string ImagePreview { get; set; } = string.Empty;
 
         public List<ColorPonderance> Colors { get; set; } = [];
+        public List<ColorPonderance> SelectedColors { get; set; } = [];
 
         public void Reset()
         {
@@ -21,6 +22,7 @@ namespace Combina2.Components.Pages
             Image = null;
             ImagePreview = string.Empty;
             Colors = [];
+            SelectedColors = [];
         }
 
         public bool IsValidImage => Image != null && Image.Length > 0;

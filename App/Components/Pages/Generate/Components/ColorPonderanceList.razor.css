@@ -28,27 +28,8 @@
     }
 }
 
-
-.color-circle {
-    height: 40px;
-    width: 40px;
-    border-radius: 100%;
-    border: 2px solid #303030;
-}
-
-.color-item {
+.colors-list{
     display: flex;
+    flex-direction: column;
     gap: 0.5rem;
-    justify-content: space-between;
-
-    p {
-        font-weight: 600;
-    }
-
-    animation: fadeIn ease-in-out 500s
-}
-
-.container-description {
-    opacity: 0.7;
-    font-weight: 500;
 }

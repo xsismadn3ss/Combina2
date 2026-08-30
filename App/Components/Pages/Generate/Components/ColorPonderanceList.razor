@@ -13,11 +13,7 @@
             <div class="colors-list">
                 @foreach (var color in State.FormState.Colors)
                 {
-                    <div class="color-item">
-                        <div class="color-circle" style="background-color: #@color.Color;"></div>
-                        <p>#@color.Color</p>
-                        <p>@color.Percentage.ToString("F2")%</p>
-                    </div>
+                    <ColorPonderanceItem color="@color" />
                 }
             </div>
         </div>
@@ -36,13 +32,14 @@
 
     private async void OnStateChanged()
     {
-        if (State.FormState.IsValidImage)
+        if (State.FormState.Image is not { Length: > 0 })
         {
-            State.FormState.Colors = 
-                ColorPonderanceService.GetPonderances(State.FormState.Image!).ToList();
+            State.FormState.Colors = [];
             await InvokeAsync(StateHasChanged);
-
+            return;
         }
+        State.FormState.Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
+        await InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
