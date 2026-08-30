@@ -3,8 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Combina2.Components.Pages
+namespace Combina2.Components.Pages.Generate
 {
+    /// <summary>
+    /// Estado del formulario para generar una paleta de colores
+    /// </summary>
     public sealed class FormState
     {
         public bool ImageLoading { get; set; } = false;
@@ -47,11 +50,14 @@ namespace Combina2.Components.Pages
         /// </summary>
         public bool IsValidImage => Image != null && Image.Length > 0;
 
+        public bool CanSelectHarmony =>
+            IsValidImage && SelectedColors.Count > 1;
+
         /// <summary>
         /// Devuelve true cuando hay una imagen valida y hay más de dos colores seleccionados
         /// </summary>
         public bool IsValidForm =>
-            IsValidImage && SelectedColors.Count > 1;
+            IsValidImage && SelectedColors.Count > 1 && !string.IsNullOrEmpty(Harmony);
     }
 
     public sealed class ResponseState
