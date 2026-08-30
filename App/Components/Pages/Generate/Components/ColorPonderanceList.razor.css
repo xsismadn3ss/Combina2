@@ -1,6 +1,53 @@
-.color-circle{
+.colors-root {
+    display: flex;
+    justify-content: center;
+}
+
+.colors-container {
+    display: flex;
+    flex-direction: column;
+}
+
+/* breakpoints para .colors-container */
+@media (max-width: 576px) {
+    .colors-container {
+        width: 90%;
+    }
+}
+
+@media (min-width: 577px) and (max-width: 992px) {
+    .colors-container {
+        width: 70%;
+    }
+}
+
+@media (min-width: 993px) {
+    .colors-container {
+        width: 50%;
+    }
+}
+
+
+.color-circle {
     height: 40px;
     width: 40px;
     border-radius: 100%;
     border: 2px solid #303030;
+}
+
+.color-item {
+    padding: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+
+    p {
+        font-weight: 600;
+    }
+
+    animation: fadeIn ease-in-out 500s
+}
+
+.container-description {
+    opacity: 0.7;
+    font-weight: 500;
 }

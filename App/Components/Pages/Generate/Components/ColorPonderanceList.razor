@@ -2,49 +2,51 @@
 @using Combina2.Services
 @inject IColorPonderanceService ColorPonderanceService
 @inject GStateMachine State
+@implements IDisposable
 
-@if (State.FormState.Image != null && State.FormState.Image.Length == 0)
+
+@if (Visible)
 {
-    <p>No hay colores freucnetas</p>
-}
-else if (State.FormState.Image != null && State.FormState.Image.Length > 0)
-{
-    <table>
-        <thead>
-            <tr>
-                <th>Color</th>
-                <th>Porcentaje</th>
-            </tr>
-        </thead>
-        <tbody>
+    <div class="colors-root">
+        <div class="colors-container">
+            <h2>Colores frecuentes</h2>
+            <p class="container-description">Selecciona dos colores o más para generar una paleta</p>
+            <div class="colors-list">
+
             @foreach (var color in Colors)
             {
-                <tr>
-                    <td class="color-circle" style="background-color: #@color.Color;"></td>
-                    <td>@color.Percentage.ToString("F2")%</td>
-                </tr>
+                <div class="color-item">
+                    <div class="color-circle" style="background-color: #@color.Color;"></div>
+                    <p>#@color.Color</p>
+                    <p>@color.Percentage.ToString("F2")%</p>
+                </div>
             }
-        </tbody>
-    </table>
+            </div>
+        </div>
+    </div>
 }
 
-@code {
-    private IEnumerable<ColorPonderance> Colors { get; set; } = [];
 
-    protected override void OnParametersSet()
-    {
-        if (State.FormState.Image == null) return;
-        else if (State.FormState.Image.Length == 0) return;
-        Colors = ColorPonderanceService.GetPonderances(State.FormState.Image);
-    }
+@code {
+    private List<ColorPonderance> Colors { get; set; } = [];
+
+    private bool Visible =>
+        State.FormState.Loaded && State.FormState.Image != null;
 
     protected override void OnInitialized()
     {
-        State.OnChange += StateHasChanged;
+        State.OnChange += OnStateChanged;
+    }
+
+    private async void OnStateChanged()
+    {
+        if (State.FormState.Image is not { Length: > 0 }) return;
+        Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
+        await InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
     {
-        State.OnChange -= StateHasChanged;
+        State.OnChange -= OnStateChanged;
     }
 }
