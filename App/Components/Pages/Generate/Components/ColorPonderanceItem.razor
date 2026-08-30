@@ -19,7 +19,7 @@
     {
         // Si el color no esta en la lista se agrega y se ajusta el estilo
         var selectedColors = State.FormState.SelectedColors;
-        if (!selectedColors.Contains(color))
+        if (!selectedColors.Any(c => c.Color == color.Color))
         {
             selected = true;
             State.FormState.SelectedColors.Add(color);
