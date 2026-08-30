@@ -34,7 +34,7 @@ namespace Combina2.Components.Pages
         /// Devuelve true cuando hay una imagen valida y hay más de dos colores seleccionados
         /// </summary>
         public bool IsValidForm =>
-            IsValidImage && SelectedColors.Count > 0;
+            IsValidImage && SelectedColors.Count > 1;
     }
 
     public sealed class ResponseState
