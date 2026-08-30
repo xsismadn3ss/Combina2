@@ -45,6 +45,9 @@ namespace Combina2.Components.Pages.Generate
             SelectedColors = [];
         }
 
+        public bool IsHarmonySelected =>
+            !string.IsNullOrEmpty(Harmony);
+
         /// <summary>
         /// Devuelve true cuando la imagen no es luna y si tiene bytes
         /// </summary>
@@ -57,7 +60,9 @@ namespace Combina2.Components.Pages.Generate
         /// Devuelve true cuando hay una imagen valida y hay más de dos colores seleccionados
         /// </summary>
         public bool IsValidForm =>
-            IsValidImage && SelectedColors.Count > 1 && !string.IsNullOrEmpty(Harmony);
+            IsValidImage &&
+            SelectedColors.Count > 1 &&
+            IsHarmonySelected;
     }
 
     public sealed class ResponseState

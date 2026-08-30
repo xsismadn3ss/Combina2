@@ -1,13 +1,20 @@
 @inject GStateMachine State
 
-<div class="g-button-container">
-    <button class="g-button @buttonStyle" disabled="@disableButton">Generar</button>
+<div class="form-button-container">
+    <button class="form-button @buttonEnable @buttonShow" disabled="@disableButton">Generar</button>
 </div>
 
 @code {
     private bool disableButton => !State.FormState.IsValidForm;
 
-    private string buttonStyle => disableButton ? "disabled" : "";
+    private string buttonEnable => disableButton ? "btn-disabled" : "";
+
+    private string buttonShow => !State.FormState.IsHarmonySelected ? "btn-invisible" : "";
+
+    private async Task HanldeClick()
+    {
+        throw new NotImplementedException("Aún no esta implementado el metodo HandleClick");
+    }
 
     protected override void OnInitialized()
     {
