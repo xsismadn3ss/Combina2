@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Combina2.Components.Pages.Generate;
+namespace Combina2.Components.Pages.Generate.Services;
 
 
 /// <summary>

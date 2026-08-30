@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using Combina2.Services;
 
-namespace Combina2.Components.Pages.Generate
+namespace Combina2.Components.Pages.Generate.Services
 {
     internal static class InjectGenerate
     {
