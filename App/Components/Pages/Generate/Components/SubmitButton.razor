@@ -5,7 +5,7 @@
 </div>
 
 @code {
-    private bool disableButton => State.FormState.IsValidForm;
+    private bool disableButton => !State.FormState.IsValidForm;
 
     private string buttonStyle => disableButton ? "disabled" : "";
 
