@@ -28,9 +28,20 @@
         else
         {
             selected = false;
-            var filteredColors = 
+            var filteredColors =
                 selectedColors.Where(c => c.Color != color.Color).ToList();
             State.FormState.SelectedColors = filteredColors;
         }
+        State.NotifyStateChanged();
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
     }
 }
