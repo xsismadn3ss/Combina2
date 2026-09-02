@@ -1,0 +1,17 @@
+<div class="floating-button-container">
+    <button class=" floating-button @btnStyle" disabled="@Disable" @attributes="AdditionalAttributes">
+        @ChildContent
+    </button>
+</div>
+
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    // Estilos
+    [Parameter] public bool Disable { get; set; } = false;
+    private string btnStyle => Disable ? "btn-disabled btn-invisible" : "";
+
+    // Permite pasar atributos estándar de <button> (type, disabled, onclick, etc.)
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+}
