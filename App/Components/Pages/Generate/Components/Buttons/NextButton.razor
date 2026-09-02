@@ -1,7 +1,26 @@
-<FloatingButton>
+@inject GStateMachine State
+
+<FloatingButton Disable="@btnDisable" Visible="@btnVisible" @onclick="HandleClick">
     Siguiente
 </FloatingButton>
 
-@code{
-    
+@code {
+    private bool btnDisable => !State.FormState.CanSelectHarmony;
+    private bool btnVisible => State.FormState.Step == 1;
+
+    private async Task HandleClick()
+    {
+        State.FormState.NextStep();
+        State.NotifyStateChanged();
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+    }
 }

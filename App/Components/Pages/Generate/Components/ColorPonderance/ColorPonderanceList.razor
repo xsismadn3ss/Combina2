@@ -22,8 +22,7 @@
 
 
 @code {
-    private bool Visible =>
-        State.FormState.ImageLoaded && State.FormState.Image != null;
+    private bool Visible => State.FormState.Step == 1;
 
     protected override void OnInitialized()
     {
