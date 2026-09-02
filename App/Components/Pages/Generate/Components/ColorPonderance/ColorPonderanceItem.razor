@@ -1,5 +1,5 @@
 @using Combina2.Models
-@inject GStateMachine State
+@inherits GenerateBase
 
 <div class="color-item @selectStyle" @onclick="PressColor">
     <div class="color-circle" style="background-color: #@color.Color;"></div>
@@ -33,15 +33,5 @@
             State.FormState.SelectedColors = filteredColors;
         }
         State.NotifyStateChanged();
-    }
-
-    protected override void OnInitialized()
-    {
-        State.OnChange += StateHasChanged;
-    }
-
-    public void Dispose()
-    {
-        State.OnChange -= StateHasChanged;
     }
 }

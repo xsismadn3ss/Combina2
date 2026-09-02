@@ -1,0 +1,20 @@
+@inherits GenerateBase
+
+
+@if(Visible){
+    <div>
+        Selector de harmonia 🚧
+        - Definir servicio para obtener harmonias
+        - Mostrar harmonias disponibles obtenidas desde el servicio
+        - Seleccionar solo una harmonia
+        - Agregar boton de enviar formulario
+        ---
+        Proximamente:
+        - Respuesta del formulario: paleta de colores generada a partir de colores seleccionados
+    </div>
+}
+
+@code{
+    private bool Visible => State.FormState.Step == 2;
+    
+}

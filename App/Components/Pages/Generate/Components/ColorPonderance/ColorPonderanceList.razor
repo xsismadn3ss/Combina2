@@ -1,7 +1,6 @@
 @using Combina2.Services
 @inject IColorPonderanceService ColorPonderanceService
-@inject GStateMachine State
-@implements IDisposable
+@inherits GenerateBase
 
 
 @if (Visible)
@@ -24,11 +23,6 @@
 @code {
     private bool Visible => State.FormState.Step == 1;
 
-    protected override void OnInitialized()
-    {
-        State.OnChange += OnStateChanged;
-    }
-
     private async void OnStateChanged()
     {
         if (State.FormState.Image is not { Length: > 0 })
@@ -39,10 +33,5 @@
         }
         State.FormState.Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
         await InvokeAsync(StateHasChanged);
-    }
-
-    public void Dispose()
-    {
-        State.OnChange -= OnStateChanged;
     }
 }

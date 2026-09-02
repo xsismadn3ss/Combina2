@@ -1,9 +1,9 @@
 ﻿@using Combina2.Components.Features
-@inject GStateMachine StateMachine
+@inherits GenerateBase
 
 <div class="image-preview-container" style="--preview-opacity:@PreviewOpacity">
     <div class="image-border">
-        <img class="image-preview" src="@StateMachine.FormState.ImagePreview" />
+        <img class="image-preview" src="@State.FormState.ImagePreview" />
         <div class="image-remove-btn" @onclick="RemoveImage">
             <SvgIcon Name="x" Color="white" />
         </div>
@@ -16,23 +16,13 @@
 
 @code {
     private string PreviewOpacity =>
-            String.IsNullOrEmpty(StateMachine.FormState.ImagePreview) ? "0.0" : "1.0";
+            String.IsNullOrEmpty(State.FormState.ImagePreview) ? "0.0" : "1.0";
 
     private string SpinnerOpacity =>
-            StateMachine.FormState.ImageLoading && !StateMachine.FormState.ImageLoaded ? "1.0" : "0.0";
+            State.FormState.ImageLoading && !State.FormState.ImageLoaded ? "1.0" : "0.0";
 
     private async Task RemoveImage()
     {
-        await StateMachine.Reset();
-    }
-
-    protected override void OnInitialized()
-    {
-        StateMachine.OnChange += StateHasChanged;
-    }
-
-    public void Dispose()
-    {
-        StateMachine.OnChange -= StateHasChanged;
+        await State.Reset();
     }
 }
