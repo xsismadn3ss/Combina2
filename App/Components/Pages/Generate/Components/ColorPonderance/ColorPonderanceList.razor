@@ -23,15 +23,14 @@
 @code {
     private bool Visible => State.FormState.Step == 1;
 
-    private async void OnStateChanged()
+    protected override Task OnStateChangedAsync()
     {
         if (State.FormState.Image is not { Length: > 0 })
         {
             State.FormState.Colors = [];
-            await InvokeAsync(StateHasChanged);
-            return;
+            return Task.CompletedTask;
         }
         State.FormState.Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
-        await InvokeAsync(StateHasChanged);
+        return Task.CompletedTask;
     }
 }

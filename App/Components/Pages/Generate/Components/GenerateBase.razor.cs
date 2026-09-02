@@ -15,11 +15,24 @@ public partial class GenerateBase : ComponentBase, IDisposable
 
     protected override void OnInitialized()
     {
-        State.OnChange += StateHasChanged;
+        State.OnChange += HandleStateChanged;
     }
 
-    public void Dispose()
+    private async void HandleStateChanged()
     {
-        State.OnChange -= StateHasChanged;
+        await OnStateChangedAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Hook virtual para que los hijos ejecuten lógica al cambiar el estado
+    /// sin tener que re-suscribirse al evento. El base ya hace StateHasChanged.
+    /// </summary>
+    protected virtual Task OnStateChangedAsync() => Task.CompletedTask;
+
+    public virtual void Dispose()
+    {
+        State.OnChange -= HandleStateChanged;
+        GC.SuppressFinalize(this);
     }
 }
