@@ -1,15 +1,16 @@
 ﻿@page "/generate"
-@using Combina2.Components.Pages.Generate.Components
+@using Combina2.Components.Pages.Generate.Components.ImageForm
+@using Combina2.Components.Pages.Generate.Components.ColorPonderance
+@using Combina2.Components.Pages.Generate.Components.Buttons
 @inject GStateMachine StateMachine
 
 <ReturnTitle title="Generate" />
 
 <section class="container">
     <div class="gbi-form">
-        <UploadImage />
-        <ImagePreview />
+        <ImageForm />
         <ColorPonderanceList />
-        <SubmitButton />
+        <Buttons />
     </div>
 </section>
 

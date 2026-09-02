@@ -32,15 +32,14 @@ public sealed class FormState
     /// </summary>
     public string Harmony { get; set; } = string.Empty;
 
-    public void Reset()
-    {
-        ImageLoading = false;
-        ImageLoaded = false;
-        Image = null;
-        ImagePreview = string.Empty;
-        Colors = [];
-        SelectedColors = [];
-    }
+    /// <summary>
+    /// Propiedad para almacenar el paso en el que esta el formulario
+    /// 0 = Subir imagen
+    /// 1 = Seleccionar colores
+    /// 2 = Seleccionar harmonia
+    /// 3 = Subir imagen
+    /// </summary>
+    public int Step { get; set; } = 0;
 
     public bool IsHarmonySelected =>
         !string.IsNullOrEmpty(Harmony);
@@ -60,4 +59,26 @@ public sealed class FormState
         IsValidImage &&
         SelectedColors.Count > 1 &&
         IsHarmonySelected;
+
+    public void NextStep()
+    {
+        Step += 1;
+    }
+
+    public void PreviousStep()
+    {
+        Step -= 1;
+    }
+
+
+    public void Reset()
+    {
+        ImageLoading = false;
+        ImageLoaded = false;
+        Image = null;
+        ImagePreview = string.Empty;
+        Colors = [];
+        SelectedColors = [];
+        Step = 0;
+    }
 }
