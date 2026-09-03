@@ -1,12 +1,11 @@
 ﻿@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
+<button class="return-title-btn" title="volver" @onclick="Return">
+    <SvgIcon Name="chevron-left" Color="rgba(var(--primary))" />
+</button>
 <section class="return-title-container">
-    <button title="volver" @onclick="Return">
-        <SvgIcon Name="chevron-left" Color="rgba(var(--primary))" />
-    </button>
     <h3>@Title</h3>
-    <button style="opacity: 0">hello</button>
 </section>
 
 <section class="return-title-shadow"></section>

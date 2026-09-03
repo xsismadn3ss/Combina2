@@ -4,7 +4,7 @@
     margin-top: 2rem;
     margin-bottom: 2rem;
     padding-inline: 0.5rem;
-    justify-content:space-between;
+    justify-content: center;
     position: fixed;
     width: 100%;
     top: 0;
@@ -14,27 +14,30 @@
         margin-inline: 0.5rem
     }
 
-    button{
-        border: 2px solid rgba(var(--primary));
-        border-radius: 100%;
-        padding: 0;
-        background: rgba(var(--secondary), 0.8);
-        backdrop-filter: blur(3px);
-        transform: translateY(0.3rem);
-        cursor: pointer;
-        width: 45px;
-        height: 45px;
-        *{
-            transform: translateX(-3px) translateY(0.5px);
-        }
-    }
-
     h3{
-        transform: translateX(-1rem);
+       margin-block: 0.6rem; 
     }
-
+    
 }
 
+.return-title-btn{
+    border: 2px solid rgba(var(--primary));
+    border-radius: 100%;
+    padding: 0;
+    background: rgba(var(--secondary), 0.8);
+    backdrop-filter: blur(3px);
+    transform: translateY(0.3rem);
+    cursor: pointer;
+    width: 45px;
+    height: 45px;
+    z-index: 30;
+    position: fixed;
+    left: 1rem;
+    top: 1.5rem;
+    *{
+        transform: translateX(-1px) translateY(0.5px);
+    }
+}
 .return-title-shadow{
     position: fixed;
     width: 100%;
