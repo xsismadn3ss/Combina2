@@ -10,6 +10,7 @@
 
     private async Task HandleClick()
     {
-        throw new NotImplementedException("Aún no esta implementado el metodo HandleClick");
+        State.FormState.NextStep();
+        State.NotifyStateChanged();
     }
 }
