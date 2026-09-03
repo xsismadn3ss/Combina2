@@ -14,6 +14,5 @@ public class HarmonyDummyRepo : IHarmonyRepository
             "complementario"
         };
         return Task.FromResult(options);
-
     }
 }
