@@ -34,10 +34,14 @@ public sealed class FormState
 
     /// <summary>
     /// Propiedad para almacenar el paso en el que esta el formulario
-    /// 0 = Subir imagen
+    /// <br/>
+    /// 0 = Subir imagen 
+    /// <br/>
     /// 1 = Seleccionar colores
+    /// <br/>
     /// 2 = Seleccionar harmonia
-    /// 3 = Subir imagen
+    /// <br/>
+    /// 3 = Enviar formulario y obtener respuesta
     /// </summary>
     public int Step { get; set; } = 0;
 
