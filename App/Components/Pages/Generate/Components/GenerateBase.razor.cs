@@ -11,6 +11,10 @@ namespace Combina2.Components.Pages.Generate.Components;
 /// </summary>
 public partial class GenerateBase : ComponentBase, IDisposable
 {
+    /// <summary>
+    /// Estado de la máquina de estados para el
+    /// componente base GenerateBase
+    /// </summary>
     [Inject] protected GStateMachine State { get; set; } = default!;
 
     protected override void OnInitialized()
