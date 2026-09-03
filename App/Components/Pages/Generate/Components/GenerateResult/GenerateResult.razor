@@ -1,23 +1,45 @@
+@using Combina2.Models
+@using Combina2.Services
+@inject IGeneratePalleteService generatePalleteService
 @inherits GenerateBase
 
 @if (IsVisible)
 {
     <CenteredContainer>
-        🚧 Paleta de colores generada...
-        @data
+        @if (State.ResponseState.Loaded)
+        {
+            <h2 style="text-align: center;">
+                Paleta: @State.ResponseState.Response!.Harmony
+            </h2>
+            @foreach (var color in State.ResponseState.Response!.Colors)
+            {
+                <div>
+                    @color.Value - @color.Role
+                </div>
+            }
+        }
     </CenteredContainer>
 }
 
 @code {
     private bool IsVisible => State.FormState.Step == 3;
-    private string data { get; set; } = string.Empty;
 
-    protected override Task OnStateChangedAsync()
+    protected override async Task OnStateChangedAsync()
     {
-        if (IsVisible)
+        if (IsVisible && !State.ResponseState.Loaded && !State.ResponseState.Loading)
         {
-            data = "| Paleta de colores ....";
+            State.ResponseState.Loading = true;
+            await InvokeAsync(StateHasChanged);
+
+            var dto = new CreatePalleteRequest()
+            {
+                Harmony = State.FormState.Harmony,
+                Colors = State.FormState.SelectedColors
+            };
+            State.ResponseState.Response = await generatePalleteService.GetPalleteAsync(dto);
+            State.ResponseState.Loaded = true;
+            State.ResponseState.Loading = false;
         }
-        return base.OnStateChangedAsync();
+        await base.OnStateChangedAsync();
     }
 }
