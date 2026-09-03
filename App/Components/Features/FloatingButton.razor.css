@@ -1,0 +1,50 @@
+.floating-button-container {
+    display: flex;
+    justify-content: center;
+}
+
+.floating-button {
+    border: 3px solid rgba(var(--primary));
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    bottom: 0.5rem;
+    position: fixed;
+    color: white;
+    font-weight: bold;
+    font-size: medium;
+    background-color: rgba(var(--secondary), 0.5);
+    backdrop-filter: blur(5px);
+    animation: fadeIn ease-in 0.3s;
+    transition: all 0.3s cubic-bezier(0.075, 0.82, 0.165, 1);
+    cursor: pointer;
+}
+
+.btn-disabled {
+    cursor: not-allowed;
+    background-color: rgba(var(--secondary), 0.2);
+    border-color: rgba(var(--primary), 0.2);
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.btn-invisible {
+    scale: 0.0;
+    opacity: 0;
+}
+
+@media (max-width: 576px) {
+    .floating-button {
+        width: 90vw;
+    }
+}
+
+@media (min-width: 577px) and (max-width: 992px) {
+    .floating-button {
+        width: 70vw;
+    }
+}
+
+@media (min-width: 993px) {
+    .floating-button {
+        width: 50vw;
+    }
+}

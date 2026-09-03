@@ -1,0 +1,16 @@
+.harmony-item{
+    font-weight: bold;
+    border: 4px solid rgb(var(--secondary));
+    background-color: rgba(var(--secondary), 0.5);
+    padding-inline: 0.5rem;
+    padding-block: 0.5rem;
+    border-radius: 0.8rem;
+    cursor: pointer;
+    transition: all ease-in-out 300ms;
+}
+
+.harmony-item-selected{
+    scale: 1.05;
+    background-color: rgba(var(--secondary), 0.7);
+    border: 4px solid rgb(var(--primary));
+}

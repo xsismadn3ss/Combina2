@@ -1,0 +1,16 @@
+@inherits GenerateBase
+
+<FloatingButton Disable="@disableBtn" Visible="@visibleBtn" @onclick="HandleClick" style="transform: translateY(-3rem);">
+    Generar
+</FloatingButton>
+
+@code {
+    private bool disableBtn => !State.FormState.IsValidForm;
+    private bool visibleBtn => State.FormState.Step == 2;
+
+    private async Task HandleClick()
+    {
+        State.FormState.NextStep();
+        State.NotifyStateChanged();
+    }
+}

@@ -1,0 +1,50 @@
+﻿@using Combina2.Components.Features
+@inherits GenerateBase
+
+<div class="upload-img-container @btnStyle" style="--btn-visible:@btnOpacity;">
+    <div class="upload-img-row">
+        <label for="file-input">
+            <div class="upload-img-button">
+                <SvgIcon Name="image-plus" Color="white" Size="50px" />
+            </div>
+        </label>
+        <InputFile id="file-input" OnChange="OnInputFileChange" hidden="hidden" accept="image/*" />
+    </div>
+</div>
+
+@code {
+    private string btnOpacity =>
+        State.FormState.Image == null && !State.FormState.ImageLoading ? "1.0" : "0.0";
+
+    private string btnStyle =>
+        State.FormState.Image != null ? "btn-minimal" : "btn-normal";
+
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        // Convertir a array de bytes
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(maxAllowedSize: 10_000_000).CopyToAsync(ms);
+        var originalBytes = ms.ToArray();
+
+        // Actualizar estado a subiendo imagen
+        State.FormState.ImageLoading = true; // Notificar que se esta cargando la imagen
+        State.NotifyStateChanged();
+
+        await Task.Yield();
+
+        // Comprimir imagen
+        var compressedImage = await Task.Run(
+            () => ImageHelper.CompressImage(originalBytes, 50));
+        var imagePreview =
+            $"data:image/jpeg;base64,{Convert.ToBase64String(compressedImage)}";
+        // Actualizar estado
+        State.FormState.Image = compressedImage;
+        State.FormState.ImagePreview = imagePreview;
+        State.FormState.ImageLoaded = true; // Agregar que ya se cargó la imagen
+        State.FormState.NextStep();
+        State.NotifyStateChanged();
+
+    }
+}

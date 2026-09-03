@@ -1,0 +1,29 @@
+.container-root {
+    display: flex;
+    justify-content: center;
+    animation: fadeIn ease-in-out 350ms;
+}
+
+.container-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+@media (max-width: 576px) {
+    .container-content {
+        width: 90%;
+    }
+}
+
+@media (min-width: 577px) and (max-width: 992px) {
+    .container-content {
+        width: 70%;
+    }
+}
+
+@media (min-width: 993px) {
+    .container-content {
+        width: 50%;
+    }
+}

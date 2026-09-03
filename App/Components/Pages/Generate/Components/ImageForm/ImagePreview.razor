@@ -1,0 +1,30 @@
+﻿@using Combina2.Components.Features
+@inherits GenerateBase
+
+<div class="image-preview-container" style="--preview-opacity:@PreviewOpacity">
+    <div class="image-border">
+        <img class="image-preview" src="@State.FormState.ImagePreview" />
+        <div class="image-remove-btn @btnVisible" @onclick="RemoveImage">
+            <SvgIcon Name="x" Color="white" />
+        </div>
+    </div>
+    <div class="image-preview-spinner" style="--spinner-opacity:@SpinnerOpacity">
+        <Spinner Size="70px" />
+    </div>
+</div>
+
+
+@code {
+    private string PreviewOpacity =>
+            String.IsNullOrEmpty(State.FormState.ImagePreview) ? "0.0" : "1.0";
+
+    private string SpinnerOpacity =>
+            State.FormState.ImageLoading && !State.FormState.ImageLoaded ? "1.0" : "0.0";
+
+    private string btnVisible => State.FormState.Step < 3 ? "": "image-remove-btn-invisible";
+
+    private async Task RemoveImage()
+    {
+        await State.Reset();
+    }
+}

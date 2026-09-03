@@ -2,20 +2,32 @@
     [Parameter] public string Name { get; set; } = string.Empty;
     [Parameter] public string Color { get; set; } = "black";
     [Parameter] public string Size { get; set; } = "24px";
+    [Parameter] public bool Shadow { get; set; } = true;
 
     private string SvgContent { get; set; } = string.Empty;
+    private string SvgShadow { get; set; } = "drop-shadow(2px 2px 2px rgba(0,0,0,0.6))";
 
     protected override void OnParametersSet()
     {
-        var path = Path.Combine("wwwroot", "svg", $"{Name}.svg");
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "wwwroot",
+            "svg",
+            $"{Name}.svg"
+        );
         if (File.Exists(path))
         {
             SvgContent = File.ReadAllText(path);
         }
+
+        if (!Shadow)
+        {
+            SvgShadow = "none";
+        }
     }
 }
 
-<div style="--size:@Size; --color:@Color">
+<div style="--size:@Size; --color:@Color; --shadow: @SvgShadow;">
     @((MarkupString)SvgContent)
 </div>
 
@@ -24,6 +36,6 @@
         width: var(--size);
         height: var(--size);
         color: var(--color);
-        filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.6));
+        filter: var(--shadow)
     }
 </style>

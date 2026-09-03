@@ -1,0 +1,8 @@
+/* CSS for GenerateByImage component */
+.gbi-form {
+    height: 60vh;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: relative;
+}

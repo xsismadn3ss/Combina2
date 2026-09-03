@@ -1,0 +1,44 @@
+@inherits GenerateBase
+
+@if (isVisible)
+{
+    <div class="btn-container">
+        <button class="return-btn @btnDisable" disabled="@disable" title="Reiniciar formulario" @onclick="State.Reset">
+            <SvgIcon Name="rotate-ccw" Color="white" Size="40px" />
+        </button>
+    </div>
+}
+
+<style>
+    .btn-container {
+        display: flex;
+        width: 100vw;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .return-btn {
+        border-radius: 0.5rem;
+        border: 3px solid rgb(var(--primary));
+        background-color: rgba(var(--secondary), 0.7);
+        cursor: pointer;
+        transition: all ease-in-out 300ms;
+        animation: fadeIn ease-in-out 300ms;
+        position: fixed;
+        bottom: 1.2rem;
+
+        * {
+            transform: translateY(0.5px);
+        }
+    }
+
+    .btn-disable {
+        opacity: 0.5;
+    }
+</style>
+
+@code {
+    private bool isVisible => State.FormState.Step == 3;
+    private bool disable => !State.ResponseState.Loaded && !State.ResponseState.Loading;
+    private string btnDisable => disable ? "btn-disable" : "";
+}

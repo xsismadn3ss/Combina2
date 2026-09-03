@@ -1,0 +1,43 @@
+/* CSS for UploadImage component */
+.upload-img-container {
+    display: flex;
+    justify-content: center;
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    transition: all ease 500ms;
+}
+
+.upload-img-row {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+}
+
+.upload-img-button {
+    border: 2px solid rgb(var(--primary));
+    border-radius: 1rem;
+    padding: 2rem;
+    background: rgba(var(--secondary), 0.7);
+    transition: all ease-in 300ms;
+    opacity: var(--btn-visible);
+    animation: fadeIn ease-in-out 0.3s;
+    display: flex;
+    width: fit-content;
+}
+
+.btn-normal {
+    scale: 1;
+}
+
+.btn-minimal {
+    scale: 0;
+}
+
+
+.upload-img-button:hover {
+    cursor: pointer;
+}
