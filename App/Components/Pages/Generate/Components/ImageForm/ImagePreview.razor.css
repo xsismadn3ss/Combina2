@@ -28,7 +28,13 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    opacity: var(--preview-opacity)
+    opacity: var(--preview-opacity);
+    transition: all ease-in-out 300ms;
+}
+
+.image-remove-btn-invisible{
+    scale: 0;
+    opacity: 0;
 }
 
 .image-preview {
