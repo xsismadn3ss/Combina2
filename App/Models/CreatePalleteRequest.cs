@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace Combina2.Models
 {
-    internal class CreatePalleteRequest
+    public class CreatePalleteRequest
     {
         [MinLength(1)]
         [JsonPropertyName("colors")]
