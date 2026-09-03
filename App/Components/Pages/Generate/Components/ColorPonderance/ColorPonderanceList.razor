@@ -5,18 +5,16 @@
 
 @if (Visible)
 {
-    <div class="colors-root">
-        <div class="colors-container">
-            <h2 style="margin: 0;">Colores frecuentes</h2>
-            <p class="container-description">Selecciona dos colores o más para generar una paleta</p>
-            <div class="colors-list">
-                @foreach (var color in State.FormState.Colors)
-                {
-                    <ColorPonderanceItem color="@color" />
-                }
-            </div>
+    <CenteredContainer style="padding-bottom: 3rem;">
+        <h2 style="margin: 0;">Colores frecuentes</h2>
+        <p class="container-description">Selecciona dos colores o más para generar una paleta</p>
+        <div class="colors-list">
+            @foreach (var color in State.FormState.Colors)
+            {
+                <ColorPonderanceItem color="@color" />
+            }
         </div>
-    </div>
+    </CenteredContainer>
 }
 
 

@@ -1,33 +1,3 @@
-.colors-root {
-    display: flex;
-    justify-content: center;
-}
-
-.colors-container {
-    display: flex;
-    flex-direction: column;
-    padding-bottom: 2rem;
-}
-
-/* breakpoints para .colors-container */
-@media (max-width: 576px) {
-    .colors-container {
-        width: 90%;
-    }
-}
-
-@media (min-width: 577px) and (max-width: 992px) {
-    .colors-container {
-        width: 70%;
-    }
-}
-
-@media (min-width: 993px) {
-    .colors-container {
-        width: 50%;
-    }
-}
-
 .colors-list{
     display: flex;
     flex-direction: column;
