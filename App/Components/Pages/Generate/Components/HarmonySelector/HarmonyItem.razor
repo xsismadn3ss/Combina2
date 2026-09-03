@@ -1,0 +1,21 @@
+@inherits GenerateBase
+
+<div class="harmony-item @itemStyle" @onclick="Select">
+    @value
+</div>
+
+@code {
+    [Parameter] public required string value { get; set; }
+
+    private string harmonySelected => State.FormState.Harmony;
+
+    private bool isSelected => State.FormState.Harmony.Equals(value);
+
+    private string itemStyle => isSelected ? "harmony-item-selected": "";
+
+    private async Task Select()
+    {
+        State.FormState.Harmony = value;
+        State.NotifyStateChanged();
+    }
+}
