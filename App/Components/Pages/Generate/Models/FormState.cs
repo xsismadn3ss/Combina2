@@ -79,6 +79,7 @@ public sealed class FormState
         ImagePreview = string.Empty;
         Colors = [];
         SelectedColors = [];
+        Harmony = string.Empty;
         Step = 0;
     }
 }
