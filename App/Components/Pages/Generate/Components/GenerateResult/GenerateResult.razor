@@ -1,0 +1,23 @@
+@inherits GenerateBase
+
+@if (IsVisible)
+{
+    <CenteredContainer>
+        🚧 Paleta de colores generada...
+        @data
+    </CenteredContainer>
+}
+
+@code {
+    private bool IsVisible => State.FormState.Step == 3;
+    private string data { get; set; } = string.Empty;
+
+    protected override Task OnStateChangedAsync()
+    {
+        if (IsVisible)
+        {
+            data = "| Paleta de colores ....";
+        }
+        return base.OnStateChangedAsync();
+    }
+}
