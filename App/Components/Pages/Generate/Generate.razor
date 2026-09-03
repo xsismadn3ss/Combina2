@@ -1,4 +1,5 @@
 ﻿@page "/generate"
+@using Combina2.Components.Pages.Generate.Components.GenerateResult
 @using Combina2.Components.Pages.Generate.Components.HarmonySelector
 @using Combina2.Components.Pages.Generate.Components.ImageForm
 @using Combina2.Components.Pages.Generate.Components.ColorPonderance
@@ -10,8 +11,11 @@
 <section class="container">
     <div class="gbi-form">
         <ImageForm />
+        @* Contentenid *@
         <ColorPonderanceList />
         <HarmonySelector />
+        <GenerateResult />
+        @* Botones para avanzar en el formulario *@
         <Buttons />
     </div>
 </section>
