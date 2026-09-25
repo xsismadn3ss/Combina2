@@ -1,0 +1,43 @@
+.menu-button {
+    transform: scale(1) translate(0, -1.4rem);
+    border: rgba(var(--primary), 1) solid 3px;
+    border-radius: 0.8rem;
+    padding: 0.3rem;
+    padding-inline: 0.5rem;
+    background-color: rgba(var(--primary), 0.2);
+    backdrop-filter: blur(3px);
+    margin: 0;
+    outline: none;
+    cursor: pointer;
+    transition: 0.3s cubic-bezier(0.23, 1, 0.320, 1);
+}
+
+.fade {
+    transition: 0.3s cubic-bezier(0.23, 1, 0.320, 1);
+}
+
+@keyframes pulse{
+    0% {
+        transform: translate(0, -1,4);
+    }
+
+    50%{
+        transform: scale(1.1) translate(0, -1.4rem);
+    }
+
+    100% {
+        transform: translate(0, -1.4rem)
+    }
+}
+
+.pulse {
+    animation: pulse 0.5s cubic-bezier(0.23, 1, 0.320, 1);
+}
+
+.rotateR {
+    transform: rotate(30deg);
+}
+
+.rotateL{
+    transform: rotate(0deg);
+}

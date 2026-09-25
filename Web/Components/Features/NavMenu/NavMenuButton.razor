@@ -1,0 +1,40 @@
+@inject NavMenuState State
+@implements IDisposable
+
+<button class="menu-button @buttonClass" @onclick="HandleClick">
+    <div class="fade @iconClass">
+        <SvgIcon Name="swatch-book" Size="40px"
+                 Color="@iconColor" />
+    </div>
+</button>
+
+
+@code {
+    private string buttonClass = "";
+    private string iconClass => State.MenuVisible ? "rotateR" : "rotateL";
+    private string iconColor => State.MenuVisible ? "rgba(var(--primary), 0.8)" : "rgba(var(--primary), 0.6)";
+
+    private async Task HandleClick()
+    {
+        await AnimateButton();
+        State.ToggleMenu();
+    }
+
+    protected async Task AnimateButton()
+    {
+        buttonClass = "pulse";
+        await Task.Delay(300);
+        buttonClass = "";
+
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= StateHasChanged;
+    }
+}

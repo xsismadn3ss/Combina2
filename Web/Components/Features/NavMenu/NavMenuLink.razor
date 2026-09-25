@@ -1,0 +1,31 @@
+@inject NavigationManager navigation
+@inject NavMenuState menuState
+@implements IDisposable
+
+@code {
+    [Parameter]
+    public required LinkModel link { get; set; }
+
+    private void HandleClick()
+    {
+        menuState.ToggleMenu();
+        navigation.NavigateTo(link.Href);
+    }
+
+    protected override void OnInitialized()
+    {
+        menuState.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        menuState.OnChange -= StateHasChanged;
+    }
+}
+
+<li class="link-item" @onclick="HandleClick">
+    <div class="link-icon">
+        <SvgIcon Name="@link.IconName" Size="30px" Color="rgba(var(--primary), 0.5)" />
+    </div>
+    <span>@link.Name</span>
+</li>

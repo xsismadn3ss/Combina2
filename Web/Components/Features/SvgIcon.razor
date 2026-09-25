@@ -1,0 +1,34 @@
+﻿@inject HttpClient Http
+
+@code {
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Color { get; set; } = "black";
+    [Parameter] public string Size { get; set; } = "24px";
+
+    private string SvgContent { get; set; } = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            SvgContent = await Http.GetStringAsync($"svg/{Name}.svg");
+        }
+        catch
+        {
+            SvgContent = string.Empty;
+        }
+    }
+}
+
+<div style="--size:@Size; --color:@Color">
+    @((MarkupString)SvgContent)
+</div>
+
+<style>
+    div svg {
+        width: var(--size);
+        height: var(--size);
+        color: var(--color);
+        filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.6));
+    }
+</style>
