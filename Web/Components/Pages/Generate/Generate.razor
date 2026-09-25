@@ -1,0 +1,37 @@
+﻿@page "/generate"
+@using Web.Components.Pages.Generate.Components.GenerateResult
+@using Web.Components.Pages.Generate.Components.HarmonySelector
+@using Web.Components.Pages.Generate.Components.ImageForm
+@using Web.Components.Pages.Generate.Components.ColorPonderance
+@using Web.Components.Pages.Generate.Components.Buttons
+@inject GStateMachine StateMachine
+
+<ReturnTitle title="Generate" />
+
+<section class="container">
+    <div class="gbi-form">
+        <ImageForm />
+        @* Contentenido *@
+        <ColorPonderanceList />
+        <HarmonySelector />
+        <GenerateResult />
+        @* Botones para avanzar en el formulario *@
+        <Buttons />
+    </div>
+</section>
+
+@code {
+    // Hacer reset al servicio cuando se desmonta el componente
+    protected override async Task OnInitializedAsync()
+    {
+        await StateMachine.Reset();
+    }
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            StateMachine.OnAfterRender();
+        }
+    }
+}
+

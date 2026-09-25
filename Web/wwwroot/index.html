@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Combina2</title>
+    <base href="/" />
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
+    <link href="Web.styles.css" rel="stylesheet" />
+    <script type="importmap"></script>
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <script>
+        function goBack() {
+            if (history.length > 0) {
+                history.back()
+            } else {
+                window.location = '/'
+            }
+        }
+        // Resuelve tras 2 frames pintados. Garantiza que el navegador
+        // haya pintado el estado actual antes de bloquear el hilo con CPU.
+        function nextFrame() {
+            return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+    </script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+
+</html>

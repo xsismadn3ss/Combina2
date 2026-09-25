@@ -1,0 +1,22 @@
+﻿@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<button class="return-title-btn" title="volver" @onclick="Return">
+    <SvgIcon Name="chevron-left" Color="rgba(var(--primary))" />
+</button>
+<section class="return-title-container">
+    <h3>@Title</h3>
+</section>
+
+<section class="return-title-shadow"></section>
+<section class="return-title-safe-area"></section>
+
+@code {
+    [Parameter] public string Title { get; set; } = String.Empty;
+
+    private async Task Return()
+    {
+        await JS.InvokeVoidAsync("goBack");
+    }
+}
+
