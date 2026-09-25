@@ -1,0 +1,31 @@
+@using Combina2.Services
+@inject IHarmonyRepository HarmonyDummy
+@inherits GenerateBase
+
+
+@if (Visible)
+{
+    <CenteredContainer>
+        <section>
+            <h2>Harmonías de colores</h2>
+            <p style="opacity: 0.8;">Selecciona una harmonía para generar una paleta de colores.</p>
+        </section>
+        <section class="harmony-list">
+            @foreach (var option in options)
+            {
+                <HarmonyItem value="@option" />
+            }
+        </section>
+    </CenteredContainer>
+}
+
+@code {
+    private bool Visible => State.FormState.Step == 2;
+
+    private List<string> options { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        options = await HarmonyDummy.GetHarmonyOptions();
+    }
+}

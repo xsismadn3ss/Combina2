@@ -1,0 +1,36 @@
+@using Combina2.Models
+@inherits GenerateBase
+
+<div class="color-item @selectStyle" @onclick="PressColor">
+    <div class="color-circle" style="background-color: #@color.Color;"></div>
+    <p>#@color.Color</p>
+    <p>@color.Percentage.ToString("F2")%</p>
+</div>
+
+@code {
+    [Parameter] public required ColorPonderance color { get; set; }
+    private bool selected =>
+        State.FormState.SelectedColors.Any(c => c == color.Color);
+    private string selectStyle => selected ? "selected" : "";
+
+    /// <summary>
+    /// Agregar o quitar color del estado de colores seleccionados
+    /// </summary>
+    private async Task PressColor()
+    {
+        // Si el color no esta en la lista se agrega y se ajusta el estilo
+        var selectedColors = State.FormState.SelectedColors;
+        if (!selectedColors.Any(c => c == color.Color))
+        {
+            State.FormState.SelectedColors.Add(color.Color);
+        }
+        // Quitar color de la lista y ajustar estilo
+        else
+        {
+            var filteredColors =
+                selectedColors.Where(c => c != color.Color).ToList();
+            State.FormState.SelectedColors = filteredColors;
+        }
+        State.NotifyStateChanged();
+    }
+}
