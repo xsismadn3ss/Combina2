@@ -1,0 +1,34 @@
+@using Combina2.Services
+@inject IColorPonderanceService ColorPonderanceService
+@inherits GenerateBase
+
+
+@if (Visible)
+{
+    <CenteredContainer style="padding-bottom: 3rem;">
+        <h2 style="margin: 0;">Colores frecuentes</h2>
+        <p class="container-description">Selecciona dos colores o más para generar una paleta</p>
+        <div class="colors-list">
+            @foreach (var color in State.FormState.Colors)
+            {
+                <ColorPonderanceItem color="@color" />
+            }
+        </div>
+    </CenteredContainer>
+}
+
+
+@code {
+    private bool Visible => State.FormState.Step == 1;
+
+    protected override Task OnStateChangedAsync()
+    {
+        if (State.FormState.Image is not { Length: > 0 })
+        {
+            State.FormState.Colors = [];
+            return Task.CompletedTask;
+        }
+        State.FormState.Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
+        return Task.CompletedTask;
+    }
+}

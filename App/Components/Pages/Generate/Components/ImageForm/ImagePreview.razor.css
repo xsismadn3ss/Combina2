@@ -1,0 +1,74 @@
+/* CSS for ImagePreview component */
+.image-preview-container {
+    display: flex;
+    justify-content: center;
+    transition: all ease-in 200ms;
+    position: relative;
+}
+
+.image-border{
+    position: relative;
+}
+
+.image-remove-btn {
+    height: 30px;
+    width: 30px;
+    justify-content: center;
+    background: rgba(var(--secondary), 0.3);
+    backdrop-filter: blur(5px);
+    border: 2px solid rgb(var(--primary));
+    border-radius: 100%;
+    cursor: pointer;
+    position: absolute;
+    right: 0;
+    top: 0;
+    transform: translate(10px, -10px);
+    width: 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    opacity: var(--preview-opacity);
+    transition: all ease-in-out 300ms;
+}
+
+.image-remove-btn-invisible{
+    scale: 0;
+    opacity: 0;
+}
+
+.image-preview {
+    max-width: 90vw;
+    border: 1px solid rgba(var(--primary));
+    border-radius: 1rem;
+    box-shadow: 0px 0px 20px 5px rgba(var(--secondary));
+    overflow: hidden;
+    opacity: var(--preview-opacity)
+}
+
+@media (max-width: 576px) {
+    .image-preview {
+        max-height: 20vh;
+    }
+    .image-preview-container{
+        height: 20vh;
+    }
+}
+
+@media (min-width: 577px) {
+    .image-preview{
+        max-height: 22vh;
+    }
+    .image-preview-container{
+        height: 22vh;
+    }
+}
+
+.image-preview-spinner{
+    position: absolute;
+    bottom: 50%;
+    left: 50%;
+    transform: translate(-30px, 20px);
+    opacity: var(--spinner-opacity);
+    transition: all ease-in 200ms;
+}

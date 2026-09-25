@@ -1,0 +1,16 @@
+@inherits GenerateBase
+
+<FloatingButton Disable="@btnDisable" Visible="@btnVisible" @onclick="HandleClick">
+    Siguiente
+</FloatingButton>
+
+@code {
+    private bool btnDisable => !State.FormState.CanSelectHarmony;
+    private bool btnVisible => State.FormState.Step == 1;
+
+    private async Task HandleClick()
+    {
+        State.FormState.NextStep();
+        State.NotifyStateChanged();
+    }
+}

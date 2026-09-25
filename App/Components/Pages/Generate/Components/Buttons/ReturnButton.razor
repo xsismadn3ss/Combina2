@@ -1,0 +1,17 @@
+@inherits GenerateBase
+
+<FloatingButton Visible="@btnVisible" @onclick="Return" style="
+    background-color: rgba(var(--secondary), 0.2);
+    border: 3px solid rgb(var(--secondary));">
+    Volver
+</FloatingButton>
+
+@code {
+    private bool btnVisible => State.FormState.Step == 2;
+
+    private async Task Return()
+    {
+        State.FormState.PreviousStep();
+        State.NotifyStateChanged();
+    }
+}

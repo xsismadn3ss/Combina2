@@ -1,0 +1,11 @@
+<section class="container-root">
+    <div class="container-content" @attributes="AdditionalAttributes">
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+}
