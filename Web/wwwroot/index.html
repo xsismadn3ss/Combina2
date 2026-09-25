@@ -8,6 +8,7 @@
     <base href="/" />
     <link rel="preload" id="webassembly" />
     <link rel="stylesheet" href="app.css" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
     <link href="Web.styles.css" rel="stylesheet" />
     <script type="importmap"></script>
 </head>
@@ -26,6 +27,20 @@
         <a href="." class="reload">Reload</a>
         <span class="dismiss">🗙</span>
     </div>
+    <script>
+        function goBack() {
+            if (history.length > 0) {
+                history.back()
+            } else {
+                window.location = '/'
+            }
+        }
+        // Resuelve tras 2 frames pintados. Garantiza que el navegador
+        // haya pintado el estado actual antes de bloquear el hilo con CPU.
+        function nextFrame() {
+            return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+    </script>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
 </body>
 

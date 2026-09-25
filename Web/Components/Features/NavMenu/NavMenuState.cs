@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Web.Components.Features.NavMenu
 {
-    public class NavMenuState
+    internal class NavMenuState
     {
         public bool MenuVisible { get; private set; }
 

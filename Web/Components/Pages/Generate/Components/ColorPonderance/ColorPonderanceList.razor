@@ -1,0 +1,43 @@
+@using Web.Services
+@inject IColorPonderanceService ColorPonderanceService
+@inherits GenerateBase
+
+
+@if (Visible)
+{
+    <CenteredContainer style="padding-bottom: 3rem;">
+        <h2 style="margin: 0;">Colores frecuentes</h2>
+        <p class="container-description">Selecciona dos colores o más para generar una paleta</p>
+        <div class="colors-list">
+            @foreach (var color in State.FormState.Colors)
+            {
+                <ColorPonderanceItem color="@color" />
+            }
+        </div>
+    </CenteredContainer>
+}
+
+
+@code {
+    private bool Visible => State.FormState.Step == 1;
+
+    // Referencia de la imagen ya procesada. En WASM hay un solo hilo y
+    // GetPonderances lo bloquea, así que solo se recalcula si la imagen cambió.
+    private byte[]? _lastProcessed;
+
+    protected override Task OnStateChangedAsync()
+    {
+        if (State.FormState.Image is not { Length: > 0 })
+        {
+            State.FormState.Colors = [];
+            _lastProcessed = null;
+            return Task.CompletedTask;
+        }
+        if (ReferenceEquals(State.FormState.Image, _lastProcessed))
+            return Task.CompletedTask;
+
+        _lastProcessed = State.FormState.Image;
+        State.FormState.Colors = ColorPonderanceService.GetPonderances(State.FormState.Image).ToList();
+        return Task.CompletedTask;
+    }
+}
