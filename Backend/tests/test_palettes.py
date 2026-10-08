@@ -19,7 +19,7 @@ def test_generate_harmonic_palette_complementary_success():
         "harmony": HarmonyType.COMPLEMENTARY.value,
     }
 
-    response = client.post(f"{APICOnfig.prefix}/pallete/generate", json=payload)
+    response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
 
     assert response.status_code == 200
     data = response.json()
@@ -47,7 +47,7 @@ def test_generate_harmonic_palette_triadic_success():
         "harmony": HarmonyType.TRIADIC.value,
     }
 
-    response = client.post(f"{APICOnfig.prefix}/pallete/generate", json=payload)
+    response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
 
     assert response.status_code == 200
     data = response.json()
@@ -72,7 +72,7 @@ def test_generate_harmonic_invalid_hex_format():
         "harmony": HarmonyType.COMPLEMENTARY.value,
     }
 
-    response = client.post(f"{APICOnfig.prefix}/pallete/generate", json=payload)
+    response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
 
     assert response.status_code == 400
     assert "Código HEX inválido" in response.json()["detail"]
@@ -85,7 +85,7 @@ def test_generate_harmonic_missing_required_fields():
     """
     payload = {"harmony": HarmonyType.COMPLEMENTARY.value}  # Falta el campo "colors"
 
-    response = client.post(f"{APICOnfig.prefix}/pallete/generate", json=payload)
+    response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
 
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == ["body", "colors"]

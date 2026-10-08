@@ -10,7 +10,7 @@ from src.schemas.palette import ColorRole
 
 client = TestClient(app)
 
-IDENTIFY_URL = f"{APICOnfig.prefix}/pallete/identify"
+IDENTIFY_URL = f"{APICOnfig.prefix}/palette/identify"
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -26,7 +26,9 @@ def _jpeg_bytes(image: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
-def _post_image(content: bytes, filename: str = "image.png", content_type: str = "image/png"):
+def _post_image(
+    content: bytes, filename: str = "image.png", content_type: str = "image/png"
+):
     return client.post(IDENTIFY_URL, files={"file": (filename, content, content_type)})
 
 
@@ -172,9 +174,11 @@ def test_identify_jpeg_format():
     # por lo que no se exige un número exacto de colores, sino que el rojo y el
     # azul originales sean los dos colores más predominantes.
     def _hex_to_rgb(value: str) -> tuple[int, int, int]:
-        return tuple(int(value[i : i + 2], 16) for i in (1, 3, 5))
+        return (int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16))
 
-    def _close(actual: tuple[int, int, int], target: tuple[int, int, int], tol: int = 6):
+    def _close(
+        actual: tuple[int, int, int], target: tuple[int, int, int], tol: int = 6
+    ):
         return all(abs(a - b) <= tol for a, b in zip(actual, target))
 
     top_two = [_hex_to_rgb(color["value"]) for color in data["colors"][:2]]
