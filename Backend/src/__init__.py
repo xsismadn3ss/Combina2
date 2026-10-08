@@ -10,6 +10,12 @@ app = FastAPI(
     description="Backend FastAPI para la generación e identificación armónica de colores.",
 )
 
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 app.include_router(palette_router)
 app.include_router(colors_router)
 app.include_router(harmony_router)
