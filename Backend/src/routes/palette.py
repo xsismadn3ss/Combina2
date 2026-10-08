@@ -1,14 +1,16 @@
+from typing import Annotated
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from src.config import APICOnfig
-from src.routes.examples.pallete import (
-    create_pallete_examples,  # pyright: ignore[reportAny]
+from src.routes.examples.palette import (
+    create_palette_examples,  # pyright: ignore[reportAny]
 )
 from src.schemas.palette import CreatePaletteRequest, HarmonyType, PaletteResponse
-from src.services.pallete_generator import ExpertSystemPaletteGenerator
+from src.services.palette_generator import ExpertSystemPaletteGenerator
 from src.services.palette_identifier import ExpertSystemPaletteIdentifier
 
-router = APIRouter(prefix=f"{APICOnfig.prefix}/pallete", tags=["pallete"])
+router = APIRouter(prefix=f"{APICOnfig.prefix}/palette", tags=["palette"])
 
 se_generator = ExpertSystemPaletteGenerator()
 se_identifier = ExpertSystemPaletteIdentifier()
@@ -28,15 +30,15 @@ se_identifier = ExpertSystemPaletteIdentifier()
     response_description="DTO estructurado con los colores resultantes y roles asignados.",
 )
 def generate(
-    payload: CreatePaletteRequest = create_pallete_examples,
+    payload: CreatePaletteRequest = create_palette_examples,
 ) -> PaletteResponse:
     try:
-        pallete = se_generator.generate_palette(
+        palette = se_generator.generate_palette(
             base_hex_colors=payload.colors,
-            harmony=payload.harmony or HarmonyType.TRIADA,
+            harmony=payload.harmony or HarmonyType.TRIADIC,
         )
-        return pallete
-    except Exception as e:
+        return palette
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -49,11 +51,11 @@ def generate(
     ),
     response_description="DTO estructurado con los colores predominantes identificados.",
 )
-async def identify(file: UploadFile = File(...)) -> PaletteResponse:
+async def identify(file: Annotated[UploadFile, File(...)]) -> PaletteResponse:
     """Identificar una paleta de colores predominantes a partir de una imagen."""
     try:
         content = await file.read()
-        pallete = se_identifier.identify_palette(content)
+        palette = se_identifier.identify_palette(content)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return pallete
+    return palette

@@ -1,7 +1,6 @@
 from fastapi import Body
 
-
-create_pallete_examples = Body(
+create_palette_examples = Body(
     ...,
     openapi_examples={
         "Prueba Complementaria": {

@@ -3,7 +3,7 @@ from fastapi.routing import APIRouter
 from src.config import APICOnfig
 from src.schemas.palette import HarmonyType
 
-router = APIRouter(prefix=f"{APICOnfig.prefix}/harmony", tags=["harmony", "pallete"])
+router = APIRouter(prefix=f"{APICOnfig.prefix}/harmony", tags=["harmony", "palette"])
 
 
 @router.get(

@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from src.config import APICOnfig
 from src.schemas.palette import ColorRole
 
-router = APIRouter(prefix=f"{APICOnfig.prefix}/colors", tags=["colors", "pallete"])
+router = APIRouter(prefix=f"{APICOnfig.prefix}/colors", tags=["colors", "palette"])
 
 
 @router.get(
