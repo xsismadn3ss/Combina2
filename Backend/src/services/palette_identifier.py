@@ -63,7 +63,9 @@ class ExpertSystemPaletteIdentifier:
         kmeans.fit(pixels)
 
         # Contamos cuántos píxeles fueron asignados a cada cluster.
-        counts = np.bincount(kmeans.labels_)
+        labels = kmeans.labels_
+        assert labels is not None
+        counts = np.bincount(labels)
 
         # Ordenamos de mayor a menor predominancia (mayor cantidad de píxeles).
         order = np.argsort(counts)[::-1]
@@ -72,8 +74,10 @@ class ExpertSystemPaletteIdentifier:
         for cluster_idx in order:
             centroid = kmeans.cluster_centers_[cluster_idx]
             # Los centroides pueden ser decimales: los convertimos a enteros RGB.
-            rgb = tuple(
-                int(round(max(0.0, min(255.0, channel)))) for channel in centroid
+            rgb: tuple[int, int, int] = (
+                round(max(0.0, min(255.0, float(centroid[0])))),
+                round(max(0.0, min(255.0, float(centroid[1])))),
+                round(max(0.0, min(255.0, float(centroid[2])))),
             )
             hex_value = ColorConverter.rgb_to_hex(rgb).upper()
             colors.append(Color(value=hex_value, role=ColorRole.PREDOMINANT.value))
