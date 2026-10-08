@@ -1,21 +1,18 @@
 import colorsys
 
+
 # Utilidades para Espacios de Color (Hex <-> RGB <-> HSL)
 class ColorConverter:
     @staticmethod
     def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
-        hex_str = hex_str.lstrip('#')
+        hex_str = hex_str.lstrip("#")
         if len(hex_str) != 6:
             raise ValueError(f"Código HEX inválido: {hex_str}")
-        return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+        return (int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16))
 
     @staticmethod
     def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
-        return "#{:02x}{:02x}{:02x}".format(
-            max(0, min(255, rgb[0])),
-            max(0, min(255, rgb[1])),
-            max(0, min(255, rgb[2]))
-        )
+        return f"#{max(0, min(255, rgb[0])):02x}{max(0, min(255, rgb[1])):02x}{max(0, min(255, rgb[2])):02x}"
 
     @staticmethod
     def hex_to_hsl(hex_str: str) -> tuple[float, float, float]:
@@ -29,4 +26,6 @@ class ColorConverter:
         s = max(0.0, min(100.0, s)) / 100.0
         l = max(0.0, min(100.0, l)) / 100.0
         r, g, b = colorsys.hls_to_rgb(h, l, s)
-        return ColorConverter.rgb_to_hex((round(r * 255), round(g * 255), round(b * 255)))
+        return ColorConverter.rgb_to_hex(
+            (round(r * 255), round(g * 255), round(b * 255))
+        )
