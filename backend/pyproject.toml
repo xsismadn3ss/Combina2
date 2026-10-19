@@ -1,0 +1,33 @@
+[project]
+name = "combina2-backend"
+version = "0.1.0"
+description = "Combina2 backend: FastAPI + TensorFlow. Fase 1: esqueletos con fallback clasico (issue #17)."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "numpy>=2.0.0",
+    "pillow>=12.3.0",
+    "pydantic>=2.0.0",
+    "pytest>=9.1.1",
+    "python-multipart>=0.0.32",
+    "scikit-learn>=1.9.0",
+    "uvicorn>=0.52.4",
+]
+
+[project.optional-dependencies]
+ml = [
+    # Inferencia neuronal (redes E/G/C, fases 3-4). Opcional en Fase 1:
+    # services/inference.py importa TF de forma perezosa y usa el motor
+    # clasico (fallback) si no esta instalado o no hay .keras activo.
+    "tensorflow>=2.16.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    ".",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
