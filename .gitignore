@@ -4,3 +4,10 @@ bin
 uv.lock
 *pyc
 __pycache__
+*.db
+*.db-journal
+backend/.venv/
+web/node_modules/
+web/.next/
+# NOTA: backend/models/*.keras SI se versionan (entregable de producción, ver
+# backend/models/README.md). No añadirlos aquí.
