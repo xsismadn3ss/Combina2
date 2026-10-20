@@ -13,6 +13,7 @@
 - [`retraining.md`](./retraining.md) — flujo feedback → dataset → re-entrenar → calibrar → eval → promover/rollback.
 - [`api.md`](./api.md) — contratos REST estables para el frontend.
 - [`frontend.md`](./frontend.md) — app Next.js que reemplaza `Web/` (Blazor).
+- [`deployment.md`](./deployment.md) — despliegue en Railway (web público + backend privado, same-origin, `/ready`, rollback y smoke E2E).
 - [`research.md`](./research.md) — bibliografía que sustenta enseñarle color a la red.
 
 ## Supuestos abiertos (por confirmar)

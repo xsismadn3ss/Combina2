@@ -4,14 +4,15 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Cache npm via BuildKit
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# El navegador utiliza el mismo origen y Next proxya las peticiones al backend.
-ARG NEXT_PUBLIC_API_URL=http://localhost:3000
+# Same-origin en produccion: vacio => el navegador usa rutas relativas y Next
+# proxya a BACKEND_INTERNAL_URL. Railway inyecta ambas como build args.
+ARG NEXT_PUBLIC_API_URL=
 ARG BACKEND_INTERNAL_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL

@@ -1,0 +1,19 @@
+# Contexto mínimo para builds en Railway (no afecta al runtime).
+.git
+.gitignore
+.vs
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.venv-tf
+**/node_modules
+**/.next
+**/.eval-cache
+**/*.egg-info
+backend/eval-report.json
+backend/eval-report.md
+backend/training.db
+*.db
+*.db-journal
+App
+web/tsconfig.tsbuildinfo

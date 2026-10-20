@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes.extract import router as extract_router
 from app.api.routes.feedback import router as feedback_router
 from app.api.routes.generate import router as generate_router
 from app.api.routes.identify import router as identify_router
 from app.api.routes.meta import colors_router, harmony_router, models_router
+from app.services import inference
 
 
 def create_app() -> FastAPI:
@@ -37,7 +39,17 @@ def create_app() -> FastAPI:
 
     @application.get("/health", tags=["health"])
     async def health() -> dict[str, str]:
+        """Liveness: no carga modelos para no penalizar el arranque."""
         return {"status": "ok"}
+
+    @application.get("/ready", tags=["health"])
+    def ready() -> JSONResponse:
+        """Readiness: 200 solo si los 3 slots activos cargan de verdad."""
+        report = inference.readiness_report()
+        return JSONResponse(
+            status_code=200 if report["ready"] else 503,
+            content=report,
+        )
 
     return application
 

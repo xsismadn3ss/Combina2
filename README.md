@@ -6,8 +6,9 @@ Combina 2 o más colores para generar una paleta. Identífica paletas de colores
 
 - [Backend](./backend/README.md)
 - [Re-entrenamiento, promoción y rollback](./docs/retraining.md)
+- [Despliegue en Railway](./docs/deployment.md)
 
-## Estado (Fase 6)
+## Estado (Fase 7)
 
 - Redes **E/G/C** activas desde `backend/models/manifest.json` con registro
   versionado (`active`/`previous`/`versions`/`files`, sha256 por archivo).
@@ -16,6 +17,9 @@ Combina 2 o más colores para generar una paleta. Identífica paletas de colores
   fallback clásico si falta el modelo.
 - Registro y rollback se gestionan con `backend/scripts/manage_models.py`; el
   flujo completo está en [`docs/retraining.md`](./docs/retraining.md).
+- **Producción (Railway)**: backend Docker con Python 3.12 + TensorFlow
+  (redes reales, no fallback), frontend Next same-origin y healthcheck
+  `GET /ready`. Ver [`docs/deployment.md`](./docs/deployment.md).
 
 ## CI / evaluación local
 
@@ -48,6 +52,7 @@ y que las métricas medidas coincidan con el manifiesto (tolerancia 10%).
 
 Desde la raíz: `docker compose up -d --build` y abre <http://localhost:3000>.
 Consulta registros con `docker compose logs -f`; detén el stack con
-`docker compose down`. El backend publica <http://localhost:8000>. La base
-existente `backend/training.db` se monta directamente y conserva los datos;
-el archivo debe existir antes de arrancar.
+`docker compose down`. El backend publica <http://localhost:8000> y su
+healthcheck espera a `GET /ready` (los 3 modelos cargados). El backend de la
+imagen **no incluye `backend/training.db`**: en runtime solo usa
+`models/*.keras` + `manifest.json`.

@@ -82,6 +82,59 @@ def clear_model_cache() -> None:
     _keras_cache.clear()
 
 
+READINESS_SLOTS = ("extract", "generate", "classify")
+
+
+def readiness_report() -> dict[str, Any]:
+    """Estado real de los tres slots para el healthcheck de Railway.
+
+    Para cada slot resuelve la versión activa con el registro (existencia +
+    sha256) e intenta cargar el `.keras` mediante ``load_keras_model`` (usa la
+    caché: el primer ``GET /ready`` puede tardar; los siguientes son baratos).
+
+    Nunca lanza: cualquier fallo se reporta como ``loaded: false`` con un
+    ``error`` breve. ``ready`` solo es ``True`` si los 3 slots activos cargan.
+    No toca ``training.db``: en runtime solo se usan ``.keras`` + manifiesto.
+    """
+    models: dict[str, dict[str, Any]] = {}
+    for slot in READINESS_SLOTS:
+        entry: dict[str, Any] = {
+            "active": None,
+            "loaded": False,
+            "fallback": True,
+        }
+        try:
+            declared = model_registry.active_version(slot)
+            entry["active"] = declared
+            path = model_registry.resolve(slot)
+            if path is None:
+                entry["error"] = (
+                    "sin versión activa verificable (archivo ausente o sha256 no coincide)"
+                )
+            else:
+                # Si el activo cayó y se resolvió `previous`, se reporta el
+                # archivo que realmente se usa.
+                entry["active"] = path.name
+                if load_keras_model(slot) is not None:
+                    entry["loaded"] = True
+                    entry["fallback"] = False
+                else:
+                    entry["error"] = (
+                        "no se pudo cargar el modelo (TensorFlow ausente o carga fallida)"
+                    )
+        except Exception as exc:  # noqa: BLE001 - readiness nunca debe romper
+            entry["error"] = f"{type(exc).__name__}: {exc}"[:200]
+        models[slot] = entry
+
+    ready = all(item["loaded"] for item in models.values())
+    return {
+        "ready": ready,
+        "models": models,
+        "fallback": not ready,
+        "storage": "models_only",
+    }
+
+
 def _active_temperature(slot: str) -> float | None:
     """Temperatura válida de calibración activa, o None si no se aplica."""
     calibration = load_calibration(slot)
