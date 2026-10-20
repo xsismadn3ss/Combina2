@@ -45,10 +45,7 @@ def test_generate_endpoint_with_model_returns_valid_palettes():
     assert 1 <= len(data["palettes"]) <= 3
     for pal in data["palettes"]:
         assert pal["type"] in VALID_HARMONY
-        if data["fallback"]:
-            assert 2 <= len(pal["colors"]) <= 5
-        else:
-            assert 5 == len(pal["colors"])
+        assert len(pal["colors"]) == 5
         for c in pal["colors"]:
             assert HEX_RE.match(c["value"])
             assert c["role"] in VALID_ROLES
@@ -77,15 +74,14 @@ def test_generate_respects_harmony_filter_and_topK():
         resp = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["palettes"]) == (1 if data["fallback"] else 5)
+        assert len(data["palettes"]) == 5
         for pal in data["palettes"]:
             # cuando hay modelo, todas deben ser del tipo pedido (filtro/reranking)
             if not data["fallback"]:
                 assert pal["type"] == harmony.value
                 assert 5 == len(pal["colors"])
             else:
-                assert 2 <= len(pal["colors"]) <= 5
-        # fallback clásico solo devuelve 1
+                assert len(pal["colors"]) == 5
         if data["fallback"]:
             assert data["palettes"][0]["type"] == harmony.value
 
@@ -139,7 +135,125 @@ def test_generate_failure_falls_back(monkeypatch):
     # debe caer al clásico
     res = inference.generate_palettes(["#FF0000"], HarmonyType.COMPLEMENTARY, top_k=3)
     assert res.fallback is True
-    assert len(res.palettes) == 1
+    assert len(res.palettes) == 3
+    assert all(len(p.colors) == 5 for p in res.palettes)
+
+
+def test_classic_fallback_preserves_multicolor_inputs_and_diverse_harmony(monkeypatch):
+    monkeypatch.setattr(inference, "load_keras_model", lambda _name: None)
+    selected = ["#C4CFC8", "#9576B6", "#91732D"]
+
+    result = inference.generate_palettes(selected, HarmonyType.ANALOGOUS, top_k=5)
+
+    assert result.fallback is True
+    assert len(result.palettes) == 5
+    signatures = [tuple(color.value for color in palette.colors) for palette in result.palettes]
+    assert len(set(signatures)) == 5, "fallback must not return near-identical clones"
+    for palette in result.palettes:
+        palette_values = [color.value for color in palette.colors]
+        assert palette.type == HarmonyType.ANALOGOUS.value
+        assert all(color in palette_values for color in selected)
+        assert len(palette_values) == 5
+
+    # Las dos propuestas adicionales deben cambiar de tono apreciablemente,
+    # no limitarse a variaciones casi imperceptibles del primer color.
+    extras = [signatures[i][3:] for i in range(len(signatures))]
+    assert len(set(extras)) == len(extras)
+
+
+def test_real_generate_model_preserves_selected_colors_and_diversifies():
+    model_path = inference.active_keras_path("generate")
+    if model_path is None:
+        pytest.skip("sin modelo G activo")
+    try:
+        import tensorflow  # noqa: F401
+    except ImportError:
+        pytest.skip("TensorFlow no instalado")
+
+    selected = ["#E63946", "#F1C40F", "#1D3557"]
+    result = inference.generate_palettes(selected, HarmonyType.ANALOGOUS, top_k=5)
+    assert not result.fallback
+    assert len(result.palettes) == 5
+    signatures = []
+    generated_labs = []
+    for palette in result.palettes:
+        values = [color.value.upper() for color in palette.colors]
+        assert len(values) == 5
+        assert all(color in values for color in selected)
+        signatures.append(tuple(values))
+        generated_labs.append([ColorConverter.hex_to_lab(value) for value in values[3:]])
+    assert len(set(signatures)) == 5
+    for i in range(len(generated_labs)):
+        for j in range(i + 1, len(generated_labs)):
+            # CIE76: both generated accents must differ meaningfully, not just jitter.
+            distances = [float(np.linalg.norm(np.subtract(a, b)))
+                         for a, b in zip(generated_labs[i], generated_labs[j])]
+            assert sum(distance > 10.0 for distance in distances) >= 2
+
+
+def test_fallback_with_issue_colors_preserves_anchors_and_diversifies(monkeypatch):
+    monkeypatch.setattr(inference, "load_keras_model", lambda _name: None)
+    selected = ["#E63946", "#F1C40F", "#1D3557"]
+    result = inference.generate_palettes(selected, HarmonyType.ANALOGOUS, top_k=5)
+    assert result.fallback
+    assert len(result.palettes) == 5
+    for palette in result.palettes:
+        values = [color.value.upper() for color in palette.colors]
+        assert len(values) == 5
+        assert all(color in values for color in selected)
+    assert len({tuple(c.value for c in p.colors) for p in result.palettes}) == 5
+
+
+def test_issue21_actual_ui_request_preserves_selected_colors_and_diversity(monkeypatch):
+    """Regression for web/generar: selected extractor colors + null harmony."""
+    # These are the first three colors displayed/selected from issue21-home.png.
+    # The web sends harmony=null for "Cualquier estilo", not "complementario".
+    monkeypatch.setattr(inference, "load_keras_model", lambda _slot: None)
+    payload = {
+        "colors": ["#FFFFFF", "#F6F5F6", "#A701B6"],
+        "topK": 5,
+        "harmony": None,
+    }
+    response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["fallback"] is True
+    assert len(data["palettes"]) == payload["topK"]
+    selected = {color.upper() for color in payload["colors"]}
+    signatures = []
+    accent_sets = []
+    for palette in data["palettes"]:
+        values = [color["value"].upper() for color in palette["colors"]]
+        assert len(values) == 5
+        assert selected.issubset(values)
+        signatures.append(tuple(values))
+        accent_sets.append(values[3:])
+    assert len(set(signatures)) == 5
+    assert len({tuple(accents) for accents in accent_sets}) == 5
+
+
+def test_issue21_actual_ui_request_with_active_model():
+    """Exercise the same HTTP DTO through the active G model when available."""
+    if inference.active_keras_path("generate") is None:
+        pytest.skip("sin modelo G activo")
+    try:
+        import tensorflow  # noqa: F401
+    except ImportError:
+        pytest.skip("TensorFlow no instalado")
+    payload = {
+        "colors": ["#FFFFFF", "#F6F5F6", "#A701B6"],
+        "topK": 5,
+        "harmony": None,
+    }
+    response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["fallback"] is False
+    assert len(data["palettes"]) == 5
+    selected = {color.upper() for color in payload["colors"]}
+    palettes = data["palettes"]
+    assert all(selected.issubset({c["value"].upper() for c in p["colors"]}) for p in palettes)
+    assert len({tuple(c["value"] for c in p["colors"]) for p in palettes}) == 5
 
 
 # --- C: classify / identify ---------
@@ -226,7 +340,8 @@ def test_g_ciede_below_30_or_report():
         pytest.skip("sin backend/models/generate-v1.keras")
     from app.ml.generate_model import GENERATE_CUSTOM_OBJECTS
     import importlib.util
-    spec = importlib.util.spec_from_file_location("train_generate", "backend/scripts/train_generate.py")
+    script_path = inference.MODELS_DIR.parent / "scripts" / "train_generate.py"
+    spec = importlib.util.spec_from_file_location("train_generate", script_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     # dataset val pequeño determinista
@@ -245,7 +360,8 @@ def test_c_accuracy_thresholds():
     if not cls_path.exists():
         pytest.skip("sin backend/models/classify-v1.keras")
     import importlib.util
-    spec = importlib.util.spec_from_file_location("train_classify", "backend/scripts/train_classify.py")
+    script_path = inference.MODELS_DIR.parent / "scripts" / "train_classify.py"
+    spec = importlib.util.spec_from_file_location("train_classify", script_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     pals = mod.build_palette_list(120, seed=123)

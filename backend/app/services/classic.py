@@ -109,8 +109,27 @@ class ClassicPaletteIdentifier:
         if pixels.shape[0] == 0:
             raise ValueError("La imagen no contiene píxeles")
 
-        unique_colors = int(np.unique(pixels, axis=0).shape[0])
-        n_clusters = min(MAX_CLUSTERS, unique_colors)
+        unique_pixels, pixel_counts = np.unique(pixels, axis=0, return_counts=True)
+        unique_colors = int(unique_pixels.shape[0])
+
+        # KMeans is unnecessary for images with at most one distinct color per
+        # requested cluster. Besides avoiding needless work, this makes 1x1,
+        # tiny and low-color images independent of sklearn's degenerate
+        # initialization/convergence behavior (notably duplicate samples).
+        if unique_colors <= MAX_CLUSTERS:
+            order = np.argsort(-pixel_counts, kind="stable")
+            return [
+                Color(
+                    value=ColorConverter.rgb_to_hex(
+                        tuple(int(channel) for channel in unique_pixels[idx])
+                    ).upper(),
+                    role=ColorRole.PREDOMINANT.value,
+                    weight=float(pixel_counts[idx]) / float(pixel_counts.sum()),
+                )
+                for idx in order
+            ]
+
+        n_clusters = MAX_CLUSTERS
 
         kmeans = KMeans(
             n_clusters=n_clusters,

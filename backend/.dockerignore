@@ -1,0 +1,9 @@
+.venv
+.venv-tf
+__pycache__
+*.py[cod]
+.pytest_cache
+training.db
+training.db-*
+tests
+scripts

@@ -2,6 +2,7 @@
 obj
 bin
 uv.lock
+.playwright-mcp
 *pyc
 __pycache__
 *.db

@@ -27,10 +27,31 @@ def _png_bytes(color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
     return buf.getvalue()
 
 
+def _small_png_bytes(size: tuple[int, int], colors: list[tuple[int, int, int]]) -> bytes:
+    img = Image.new("RGB", size)
+    img.putdata([colors[index % len(colors)] for index in range(size[0] * size[1])])
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_local_frontend_origin_is_allowed_by_cors():
+    response = client.options(
+        f"{APICOnfig.prefix}/palette/generate",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
 
 
 def test_harmony_lists_four_types():
@@ -50,7 +71,7 @@ def test_generate_complementary_red_to_cyan_fallback():
     response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
     assert response.status_code == 200
     data = response.json()
-    # con G activa fallback False (red neural 5 colores), sin ella True (clásico 2 colores cyan exacto)
+    # G activa o fallback: contrato común de cinco colores.
     # acepta ambos para que pase en .venv y .venv-tf
     try:
         import tensorflow  # noqa: F401
@@ -63,24 +84,21 @@ def test_generate_complementary_red_to_cyan_fallback():
 
         expects_fallback = active_keras_path("generate") is None
         assert data["fallback"] is expects_fallback
-        if expects_fallback:
-            assert len(data["palettes"]) == 1
-            palette = data["palettes"][0]
-            assert palette["type"] == HarmonyType.COMPLEMENTARY.value
-            assert palette["colors"][0]["value"] == "#FF0000"
-            assert palette["colors"][1]["value"] == "#00FFFF"
-        else:
+        if not expects_fallback:
             # neural: 5 colores, score ordenado, tipo correcto
             assert data["palettes"][0]["type"] == HarmonyType.COMPLEMENTARY.value
             assert 5 == len(data["palettes"][0]["colors"])
             assert data["palettes"][0]["colors"][0]["value"] == "#FF0000"
     else:
         assert data["fallback"] is True
-        assert len(data["palettes"]) == 1
+        assert len(data["palettes"]) == 5
         palette = data["palettes"][0]
         assert palette["type"] == HarmonyType.COMPLEMENTARY.value
         assert palette["colors"][0]["value"] == "#FF0000"
-        assert palette["colors"][1]["value"] == "#00FFFF"
+        assert len(palette["colors"]) == 5
+        assert [p["score"] for p in data["palettes"]] == sorted(
+            (p["score"] for p in data["palettes"]), reverse=True
+        )
 
 
 def test_generate_invalid_hex_is_400():
@@ -166,6 +184,37 @@ def test_identify_solid_image_is_predominant_fallback():
     else:
         assert data["type"] == "predominant"
         assert data["fallback"] is True
+
+
+@pytest.mark.parametrize(
+    ("size", "colors"),
+    [
+        ((1, 1), [(12, 34, 56)]),
+        ((2, 1), [(12, 34, 56), (12, 34, 56)]),
+        ((2, 2), [(255, 0, 0), (0, 255, 0)]),
+        ((3, 2), [(255, 0, 0), (0, 255, 0), (0, 0, 255)]),
+    ],
+)
+@pytest.mark.parametrize("endpoint", ["extract", "identify"])
+def test_small_low_color_images_do_not_crash(endpoint, size, colors):
+    response = client.post(
+        f"{APICOnfig.prefix}/palette/{endpoint}",
+        files={"file": ("small.png", _small_png_bytes(size, colors), "image/png")},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    extracted = data["colors"]
+    assert 1 <= len(extracted) <= min(10, len(set(colors)))
+    assert sum(color["weight"] for color in extracted) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("endpoint", ["extract", "identify"])
+def test_corrupt_image_is_client_error_not_server_error(endpoint):
+    response = client.post(
+        f"{APICOnfig.prefix}/palette/{endpoint}",
+        files={"file": ("corrupt.png", b"not a PNG image", "image/png")},
+    )
+    assert response.status_code == 400
 
 
 def test_feedback_persists_row(training_db):
