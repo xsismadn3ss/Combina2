@@ -5,6 +5,7 @@ uv.lock
 .playwright-mcp
 *pyc
 __pycache__
+*.egg-info/
 *.db
 *.db-journal
 !backend/training.db

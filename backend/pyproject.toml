@@ -1,7 +1,11 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "combina2-backend"
 version = "0.1.0"
-description = "Combina2 backend: FastAPI + TensorFlow. Fase 1: esqueletos con fallback clasico (issue #17)."
+description = "Combina2 backend: FastAPI + TensorFlow. Fase 6: redes E/G/C, eval, calibracion y versionado."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -24,6 +28,12 @@ ml = [
     # clasico (fallback) si no esta instalado o no hay .keras activo.
     "tensorflow>=2.16.0",
 ]
+
+[tool.setuptools.packages.find]
+# Solo se empaqueta la app FastAPI. `eval/`, `scripts/`, `models/` y `tests/`
+# viven en el repo pero no son paquetes de distribucion (evita el error de
+# "Multiple top-level packages discovered" en flat-layout).
+include = ["app*"]
 
 [tool.pytest.ini_options]
 pythonpath = [
