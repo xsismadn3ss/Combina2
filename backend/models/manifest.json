@@ -6,11 +6,15 @@
     ]
   },
   "generate": {
-    "active": null,
-    "versions": []
+    "active": "generate-v1.keras",
+    "versions": [
+      "generate-v1.keras"
+    ]
   },
   "classify": {
-    "active": null,
-    "versions": []
+    "active": "classify-v1.keras",
+    "versions": [
+      "classify-v1.keras"
+    ]
   }
 }

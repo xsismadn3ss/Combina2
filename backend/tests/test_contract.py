@@ -50,12 +50,37 @@ def test_generate_complementary_red_to_cyan_fallback():
     response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["fallback"] is True
-    assert len(data["palettes"]) == 1
-    palette = data["palettes"][0]
-    assert palette["type"] == HarmonyType.COMPLEMENTARY.value
-    assert palette["colors"][0]["value"] == "#FF0000"
-    assert palette["colors"][1]["value"] == "#00FFFF"
+    # con G activa fallback False (red neural 5 colores), sin ella True (clásico 2 colores cyan exacto)
+    # acepta ambos para que pase en .venv y .venv-tf
+    try:
+        import tensorflow  # noqa: F401
+
+        has_tf = True
+    except ImportError:
+        has_tf = False
+    if has_tf:
+        from app.services.inference import active_keras_path
+
+        expects_fallback = active_keras_path("generate") is None
+        assert data["fallback"] is expects_fallback
+        if expects_fallback:
+            assert len(data["palettes"]) == 1
+            palette = data["palettes"][0]
+            assert palette["type"] == HarmonyType.COMPLEMENTARY.value
+            assert palette["colors"][0]["value"] == "#FF0000"
+            assert palette["colors"][1]["value"] == "#00FFFF"
+        else:
+            # neural: 5 colores, score ordenado, tipo correcto
+            assert data["palettes"][0]["type"] == HarmonyType.COMPLEMENTARY.value
+            assert 5 == len(data["palettes"][0]["colors"])
+            assert data["palettes"][0]["colors"][0]["value"] == "#FF0000"
+    else:
+        assert data["fallback"] is True
+        assert len(data["palettes"]) == 1
+        palette = data["palettes"][0]
+        assert palette["type"] == HarmonyType.COMPLEMENTARY.value
+        assert palette["colors"][0]["value"] == "#FF0000"
+        assert palette["colors"][1]["value"] == "#00FFFF"
 
 
 def test_generate_invalid_hex_is_400():
@@ -118,9 +143,29 @@ def test_identify_solid_image_is_predominant_fallback():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["type"] == "predominant"
-    assert data["fallback"] is True
     assert data["colors"][0]["value"] == "#00FF00"
+    # con C activa, tipo en 4 armonías y fallback False; sin ella, predominant True
+    try:
+        import tensorflow  # noqa: F401
+
+        has_tf = True
+    except ImportError:
+        has_tf = False
+    if has_tf:
+        from app.services.inference import active_keras_path
+
+        has_c = active_keras_path("classify") is not None
+        has_e = active_keras_path("extract") is not None
+        expects_fallback = not (has_c and has_e)
+        assert data["fallback"] is expects_fallback
+        if expects_fallback:
+            assert data["type"] == "predominant"
+        else:
+            assert data["type"] in {h.value for h in HarmonyType}
+            assert 0.0 <= data["confidence"] <= 1.0
+    else:
+        assert data["type"] == "predominant"
+        assert data["fallback"] is True
 
 
 def test_feedback_persists_row(training_db):

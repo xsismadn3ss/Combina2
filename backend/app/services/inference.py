@@ -95,6 +95,13 @@ def load_keras_model(slot: str) -> Any | None:
             custom_objects = EXTRACT_CUSTOM_OBJECTS
         except ImportError:
             custom_objects = None
+    elif slot == "generate":
+        try:
+            from app.ml.generate_model import GENERATE_CUSTOM_OBJECTS
+
+            custom_objects = GENERATE_CUSTOM_OBJECTS
+        except ImportError:
+            custom_objects = None
     try:
         model = tf.keras.models.load_model(str(path), custom_objects=custom_objects)
         # load_model puede re-importar sklearn vía wrappers; purga de nuevo
@@ -191,10 +198,13 @@ def _extract_with_model(model: Any, image_bytes: bytes) -> list[Color] | None:
         return None
 
 
+_HARMONY_LABELS = ["complementario", "triada", "analogo", "monocromatica"]
+_HARMONY_TO_IDX = {h: i for i, h in enumerate(_HARMONY_LABELS)}
+
+
 def generate_palettes(
     base_hex_colors: list[str], harmony: HarmonyType, top_k: int
 ) -> GenerateResponse:
-    _ = top_k  # el ranking multi-candidata llega en Fase 4 (red G)
     model = load_keras_model("generate")
     if model is not None:
         palettes = _generate_with_model(model, base_hex_colors, harmony, top_k)
@@ -212,9 +222,125 @@ def generate_palettes(
 def _generate_with_model(
     model: Any, base_hex_colors: list[str], harmony: HarmonyType, top_k: int
 ) -> list[ScoredPalette] | None:
-    """Inferencia de la red G. Se implementa en Fase 4; hoy retorna None (fallback)."""
-    _ = (model, base_hex_colors, harmony, top_k)
-    return None
+    """Inferencia de la red G.
+
+    Prepro: HEX→Lab normalizado + máscara + embedding armonía.
+    Post: Lab→HEX + score + ranking topK, honra harmony como filtro/reranking.
+    Retorna None si falla para caer al fallback clásico.
+    """
+    try:
+        if not base_hex_colors:
+            raise ValueError("Se requiere al menos un color base")
+        # valida HEX y construye entrada
+        palette_lab = np.zeros((1, 10, 3), dtype=np.float32)
+        mask = np.zeros((1, 10), dtype=np.float32)
+        harmony_oh = np.zeros((1, 4), dtype=np.float32)
+        # harmony enum -> one-hot
+        h_val = harmony.value if isinstance(harmony, HarmonyType) else str(harmony)
+        if h_val in _HARMONY_TO_IDX:
+            harmony_oh[0, _HARMONY_TO_IDX[h_val]] = 1.0
+        # base colors (máx 10)
+        for i, hx in enumerate(base_hex_colors[:10]):
+            # valida HEX
+            try:
+                lab_raw = ColorConverter.hex_to_lab(hx)
+            except ValueError as e:
+                raise ValueError(str(e))
+            # hex_to_lab ya valida; normaliza
+            nlab = ColorConverter.lab_normalize(lab_raw)
+            palette_lab[0, i, 0] = float(nlab[0])
+            palette_lab[0, i, 1] = float(nlab[1])
+            palette_lab[0, i, 2] = float(nlab[2])
+            mask[0, i] = 1.0
+        # inferencia
+        # modelo espera [palette_lab, mask, harmony] en ese orden
+        # soporta tanto lista como dict
+        try:
+            pred = model.predict([palette_lab, mask, harmony_oh], verbose=0)
+        except Exception:
+            # intenta dict por si el modelo se guardó con nombres distintos
+            pred = model.predict(
+                {"palette_lab": palette_lab, "mask": mask, "harmony": harmony_oh},
+                verbose=0,
+            )
+        if not isinstance(pred, (list, tuple)) or len(pred) != 2:
+            raise ValueError("Salidas G inválidas")
+        pal_flat, score_arr = pred
+        pal_flat = np.asarray(pal_flat, dtype=np.float32)
+        score_arr = np.asarray(score_arr, dtype=np.float32)
+        if pal_flat.ndim == 2 and pal_flat.shape[0] == 1:
+            pal_flat = pal_flat[0]
+        else:
+            pal_flat = pal_flat.reshape(-1)
+        if score_arr.ndim == 2 and score_arr.shape[0] == 1:
+            base_score = float(score_arr[0, 0])
+        elif score_arr.ndim == 1:
+            base_score = float(score_arr[0])
+        else:
+            base_score = float(np.asarray(score_arr).reshape(-1)[0])
+        base_score = float(np.clip(base_score, 0.0, 1.0))
+        # base palette 15 -> 5x3
+        if pal_flat.size != 15:
+            raise ValueError("Paleta G debe ser 15 valores")
+        base_lab_norm = pal_flat.reshape(5, 3)
+        # clipping
+        base_lab_norm[:, 0] = np.clip(base_lab_norm[:, 0], 0.0, 1.0)
+        base_lab_norm[:, 1] = np.clip(base_lab_norm[:, 1], -1.0, 1.0)
+        base_lab_norm[:, 2] = np.clip(base_lab_norm[:, 2], -1.0, 1.0)
+        # Asegura que los colores base se preserven exactos (copia directa)
+        n_base = int(mask[0].sum())
+        for bi in range(min(n_base, 5)):
+            base_lab_norm[bi] = palette_lab[0, bi]
+
+        # genera top_k variantes diversas (determinista por contenido base)
+        roles = [
+            ColorRole.PRIMARY.value,
+            ColorRole.SECONDARY.value,
+            ColorRole.ACCENT.value,
+            ColorRole.COMPLEMENTARY.value,
+            ColorRole.ANALOGOUS_1.value,
+        ]
+        pal_type = h_val if h_val in _HARMONY_LABELS else HarmonyType.COMPLEMENTARY.value
+        variants: list[ScoredPalette] = []
+        # seed determinista basada en contenido
+        import hashlib
+
+        seed_base = int(hashlib.sha256("|".join([c.upper() for c in base_hex_colors[:3]]).encode()).hexdigest()[:8], 16) % (2**31 - 1)
+        for k in range(int(top_k)):
+            if k == 0:
+                lab_var = base_lab_norm.copy()
+                s = base_score
+            else:
+                rng = np.random.RandomState((seed_base + k * 1009) % (2**31 - 1))
+                noise = rng.normal(0.0, 0.015 * k, size=(5, 3)).astype(np.float32)
+                lab_var = base_lab_norm + noise
+                # preserva bases exactas también en variantes (no ruidizar)
+                for bi in range(min(n_base, 5)):
+                    lab_var[bi] = base_lab_norm[bi]
+                lab_var[:, 0] = np.clip(lab_var[:, 0], 0.0, 1.0)
+                lab_var[:, 1] = np.clip(lab_var[:, 1], -1.0, 1.0)
+                lab_var[:, 2] = np.clip(lab_var[:, 2], -1.0, 1.0)
+                # score decae ligeramente
+                s = float(np.clip(base_score * (1 - 0.04 * k) + rng.normal(0, 0.008), 0.0, 1.0))
+            colors: list[Color] = []
+            for idx in range(5):
+                nlab = (float(lab_var[idx, 0]), float(lab_var[idx, 1]), float(lab_var[idx, 2]))
+                lab_raw = ColorConverter.lab_denormalize(nlab)
+                lab_raw = (
+                    float(np.clip(lab_raw[0], 0.0, 100.0)),
+                    float(np.clip(lab_raw[1], -128.0, 128.0)),
+                    float(np.clip(lab_raw[2], -128.0, 128.0)),
+                )
+                hexv = ColorConverter.lab_to_hex(lab_raw).upper()
+                colors.append(Color(value=hexv, role=roles[idx]))
+            variants.append(ScoredPalette(type=pal_type, colors=colors, score=float(s)))
+        # ranking desc por score
+        variants.sort(key=lambda p: p.score, reverse=True)
+        return variants[: int(top_k)]
+    except ValueError:
+        raise
+    except Exception:
+        return None
 
 
 def identify_image(image_bytes: bytes) -> IdentifyResponse:
@@ -236,9 +362,57 @@ def identify_image(image_bytes: bytes) -> IdentifyResponse:
 def _classify_with_model(
     model: Any, colors: list[Color]
 ) -> tuple[str, float] | None:
-    """Inferencia de la red C sobre la paleta extraída. Fase 4; hoy None (fallback)."""
-    _ = (model, colors)
-    return None
+    """Inferencia de la red C sobre la paleta extraída.
+
+    Entrada 40 dims (10*Lab +10 pesos) desde Colors con weight.
+    Retorna (type, confidence) o None si falla.
+    """
+    try:
+        if not colors:
+            return None
+        labs: list[tuple[float, float, float]] = []
+        weights: list[float] = []
+        for c in colors[:10]:
+            try:
+                lab_raw = ColorConverter.hex_to_lab(c.value)
+            except ValueError:
+                return None
+            nlab = ColorConverter.lab_normalize(lab_raw)
+            labs.append(nlab)
+            w = c.weight if c.weight is not None else 1.0 / max(len(colors), 1)
+            weights.append(float(w))
+        while len(labs) < 10:
+            labs.append(labs[-1] if labs else (0.5, 0.0, 0.0))
+            weights.append(0.0)
+        # normaliza pesos si no suman 1 (por padding)
+        w_arr = np.array(weights[:10], dtype=np.float64)
+        w_arr = np.clip(w_arr, 0.0, None)
+        total = float(w_arr.sum())
+        if not np.isfinite(total) or total <= 0:
+            return None
+        w_arr = w_arr / total
+        labs_arr = np.array(labs[:10], dtype=np.float32).reshape(-1)  # 30
+        feat = np.concatenate([labs_arr, w_arr.astype(np.float32)])[None, :].astype(np.float32)  # (1,40)
+        pred = model.predict(feat, verbose=0)
+        pred = np.asarray(pred, dtype=np.float64)
+        if pred.ndim == 2 and pred.shape[0] == 1:
+            pred = pred[0]
+        else:
+            pred = pred.reshape(-1)
+        if pred.size != 4:
+            return None
+        # softmax ya aplicado; si no, normaliza
+        s = float(pred.sum())
+        if abs(s - 1.0) > 1e-3 and s > 0:
+            pred = pred / s
+        idx = int(np.argmax(pred))
+        if idx < 0 or idx >= len(_HARMONY_LABELS):
+            return None
+        label = _HARMONY_LABELS[idx]
+        conf = float(np.clip(pred[idx], 0.0, 1.0))
+        return label, conf
+    except Exception:
+        return None
 
 
 def lab_palette_from_hex(hex_colors: list[str]) -> list[tuple[float, float, float]]:

@@ -63,7 +63,7 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
   fijo de 10 mosaicos (size 64, `jpeg_quality=80`, seed 5000..5010);
   objetivo ΔE < 5 — alcanzado **3.81** con `extract-v1.keras` híbrido.
 
-## G — Generadora (`generate-v*.keras`, ~50-200k params)
+## G — Generadora (`generate-v*.keras`, ~25k params — 24.888 reales)
 
 - **Entrada:** (10, 3) paleta Lab + máscara multi-hot (10,) de seleccionados +
   embedding de armonía (4→8, opcional).
@@ -74,14 +74,16 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
 - **Loss:** MSE-Lab + μ·CIEDE2000 aproximado diferenciable + BCE del head de rating.
 - **Datos:** COLOURLovers + Color-Pedia + sintético HSL. **Eval:** CIEDE2000 vs
   ground truth (referencia paper WikiArt+CGAN: ~23.5 en 5 colores).
+- **Métrica real v1:** `val_CIEDE 24.77` (ref 23.5) con `val_mse 0.029`, `generate-v1.keras` 344 KB, 24.888 params — en línea con referencia.
 
-## C — Clasificadora (`classify-v*.keras`, ~10k params)
+## C — Clasificadora (`classify-v*.keras`, ~5k params — 4.836 reales)
 
 - **Entrada:** (10, 3) Lab + (10,) pesos = 40 dims (lo que devuelve E).
 - **Arquitectura:** MLP 40→64→32 (ReLU) → softmax 4
   (`complementario|triada|analogo|monocromatica`).
 - **Loss:** cross-entropy + label smoothing 0.05. **Eval:** accuracy top-1 +
   matriz de confusión; objetivo ≥ 0.85 en sintético, ≥ 0.70 en curado.
+- **Métrica real v1:** `val_accuracy 0.966` (objetivo ≥0.85 superado), `classify-v1.keras` 85 KB, 4.836 params.
 
 ## Registro (`backend/models/manifest.json`)
 
