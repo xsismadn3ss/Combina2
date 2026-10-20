@@ -2,8 +2,7 @@
 
 Esta carpeta **sí se versiona en git**: es el entregable de producción. Cada red ocupa
 un slot (`extract` | `generate` | `classify`) y el backend sirve el `.keras` marcado
-como `active` en [`manifest.json`](manifest.json). Sin `active` (estado actual, Fase 1),
-la API responde con el motor clásico y `fallback: true`.
+como `active` en [`manifest.json`](manifest.json). Los 3 slots `extract`/`generate`/`classify` ya tienen `active` (Fase 4 — `extract-v1.keras`, `generate-v1.keras`, `classify-v1.keras`); si un `.keras` faltara, la API responde con el motor clásico y `fallback: true`.
 
 ## Política
 
