@@ -6,6 +6,7 @@ import type { ScoredPalette } from "@/lib/api/types";
 import { sendFeedback } from "@/lib/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ColorSwatch } from "@/components/ColorSwatch";
 
 type Props = {
   palettes: ScoredPalette[];
@@ -35,8 +36,11 @@ export function PaletteCarousel({ palettes, fallback }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="space-y-1">
         <h3 className="font-medium">Tus propuestas de color</h3>
+        <p className="text-xs text-muted-foreground">
+          Toca un color para copiar su código HEX.
+        </p>
       </div>
 
       {/* simple grid as carousel fallback - responsive */}
@@ -49,13 +53,13 @@ export function PaletteCarousel({ palettes, fallback }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex overflow-hidden rounded-lg border">
+              <div className="grid grid-cols-5 gap-1.5">
                 {p.colors.map((c) => (
-                  <div
+                  <ColorSwatch
                     key={`${c.value}-${c.role}`}
-                    className="h-16 flex-1"
-                    style={{ backgroundColor: c.value }}
-                    aria-hidden="true"
+                    value={c.value}
+                    copyable
+                    swatchClassName="h-12 sm:h-16"
                   />
                 ))}
               </div>

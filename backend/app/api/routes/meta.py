@@ -14,11 +14,19 @@ models_router = APIRouter(prefix=APICOnfig.prefix, tags=["models"])
 
 
 @harmony_router.get(
-    "/",
+    "",
     description="Lista de tipos de armonías para colores",
     response_description="Lista de tipos de armonías para colores",
 )
+@harmony_router.get(
+    "/",
+    include_in_schema=False,
+    description="Alias con barra final (compatibilidad)",
+    response_description="Lista de tipos de armonías para colores",
+)
 async def harmony() -> list[HarmonyType]:
+    # Ambas rutas existen para evitar el 307 con Location absoluto que rompía
+    # el proxy same-origin del frontend (CORS).
     return list(HarmonyType.__members__.values())
 
 
