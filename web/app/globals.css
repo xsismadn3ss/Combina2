@@ -116,6 +116,36 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@keyframes rainbow-cycle {
+    0%,
+    100% {
+        color: #ef4444;
+    }
+    20% {
+        color: #f59e0b;
+    }
+    40% {
+        color: #22c55e;
+    }
+    60% {
+        color: #06b6d4;
+    }
+    80% {
+        color: #8b5cf6;
+    }
+}
+
+.rainbow-icon {
+    animation: rainbow-cycle 14s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rainbow-icon {
+        animation: none;
+        color: var(--primary);
+    }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
