@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.extract import router as extract_router
 from app.api.routes.feedback import router as feedback_router
@@ -15,6 +16,16 @@ def create_app() -> FastAPI:
             "Paletas de color con redes neuronales TensorFlow "
             "(fallback clásico mientras no haya modelos activos)."
         ),
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     application.include_router(extract_router)
     application.include_router(generate_router)
