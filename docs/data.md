@@ -1,7 +1,11 @@
 # Datos — sqlite + datasets
 
-`training.db` vive en `backend/` y **no se versiona** (ver `.gitignore`). Guarda datos de
-entrenamiento y feedback, nunca pesos (esos van en `backend/models/`).
+`training.db` vive en `backend/` y **sí se versiona como evidencia** de los runs
+de entrenamiento y del feedback recogido (excepción explícita en `.gitignore`:
+`*.db` ignorados salvo `!backend/training.db`). Nunca guarda pesos: esos van en
+`backend/models/`. Es evidencia de trazabilidad (filas de `training_runs`,
+versiones TF/Keras, calibración) y, además, los scripts de entrenamiento leen
+de él las paletas etiquetadas de armonía.
 
 ## 1. DDL
 
@@ -43,8 +47,11 @@ CREATE TABLE IF NOT EXISTS training_runs(
   id INTEGER PRIMARY KEY,
   model TEXT NOT NULL,               -- extract|generate|classify
   git_sha TEXT, params_json TEXT,
-  metrics_json TEXT,                 -- ej. {"val_caddy2000": 23.5}
-  keras_path TEXT NOT NULL,
+  metrics_json TEXT,                 -- ej. {"val_ciede2000": 13.1}
+  keras_path TEXT NOT NULL,          -- backend/models/<slot>-vN.keras
+  tf_version TEXT,                   -- B3: versión de TensorFlow del run
+  keras_version TEXT,                -- B3: versión de Keras del run
+  calibration_json TEXT,             -- B3: calibración aplicada o NULL
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -54,9 +61,20 @@ CREATE TABLE IF NOT EXISTS feedback(
   palette_id INTEGER REFERENCES palettes(id),
   accepted INTEGER,                  -- 1/0
   score REAL,
+  palette_json TEXT,                 -- paleta enviada por /feedback (JSON)
+  image_sha256 TEXT,                 -- sha256 de la foto, si el cliente lo envía
   created_at TEXT DEFAULT (datetime('now'))
 );
 ```
+
+## 1.1 Migración B3 (`training_runs`)
+
+`app/db/sqlite.py` ejecuta una migración **idempotente** al abrir la conexión:
+si faltan, añade `tf_version`, `keras_version` y `calibration_json` con
+`ALTER TABLE ... ADD COLUMN`. La `training.db` existente se conserva sin
+pérdida de filas; `calibration_json` es nullable (los runs nuevos de
+entrenamiento no calibran; la calibración se registra aparte en el manifiesto
+y puede copiarse aquí cuando aplique).
 
 ## 2. Fuentes (orden de prioridad)
 
@@ -68,7 +86,14 @@ CREATE TABLE IF NOT EXISTS feedback(
 3. **Sintético del motor HSL actual** (`main:Backend/src/services/palette_generator.py`) —
    generar (base, armonía) → paleta + ruido Lab; etiqueta perfecta día-0 para C y
    bootstrap de G. Si (1)+(2) no rinden, este es el plan B completo.
-4. **WikiArt subset** (opcional, fase 6) — solo si E necesita más variedad de imágenes.
+4. **WikiArt subset** — **descartado en Fase 6 (ADR).** E se entrena por
+   destilación de KMeans sobre mosaicos sintéticos + paletas de `training.db`;
+   el resultado híbrido `HardKMeans` ya cumple ΔE76 < 5 y no necesita imágenes
+   de arte. Criterio para revisarlo: solo si una futura E amortizada (sin
+   KMeans en inferencia) no alcanza los gates de paridad con mosaicos
+   sintéticos, o si se aborda un dominio de fotos reales que los mosaicos no
+   representen. En ese caso se documentará la licencia del subset y el
+   preproceso/dedup por `sha256` antes de incorporarlo.
 
 ## 3. Preproceso común (`datasets.py`)
 

@@ -8,8 +8,9 @@
 ## Índice
 
 - [`architecture.md`](./architecture.md) — visión, monorepo, flujos historia 1 y 2, decisiones.
-- [`data.md`](./data.md) — sqlite (`training.db`, gitignored), datasets público + sintético, DDL.
-- [`models.md`](./models.md) — redes E / G / C: entradas, salidas, loss, entrenamiento, `models/`.
+- [`data.md`](./data.md) — sqlite (`training.db`, versionado como evidencia), datasets público + sintético, DDL.
+- [`models.md`](./models.md) — redes E / G / C: entradas, salidas, loss, entrenamiento, registro/versiones/rollback.
+- [`retraining.md`](./retraining.md) — flujo feedback → dataset → re-entrenar → calibrar → eval → promover/rollback.
 - [`api.md`](./api.md) — contratos REST estables para el frontend.
 - [`frontend.md`](./frontend.md) — app Next.js que reemplaza `Web/` (Blazor).
 - [`research.md`](./research.md) — bibliografía que sustenta enseñarle color a la red.

@@ -3,8 +3,14 @@
 Todo color de entrenamiento/inferencia se representa en **CIELAB normalizado**.
 Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
 
-## E — Extractora (`extract-v*.keras`, ~10-50k params)
+## E — Extractora (`extract-v*.keras`; `extract-v1.keras` = 1 param)
 
+- **Parámetros reales:** `extract-v1.keras` tiene **1 parámetro entrenable**: el
+  camino desplegado es `HardKMeans` (KMeans determinista, sin pesos
+  aprendidos); el único tensor es el `dummy` escalar de `HardKMeans` (para que
+  el optimizador tenga una variable; no afecta a la salida). El MLP
+  amortizado de `build_extract_model(use_kmeans=False)` sí tendría decenas de
+  miles, pero no es la versión desplegada.
 - **Entrada:** (3000, 3) píxeles Lab normalizados de la imagen preprocesada
   (`datasets.preprocess_image`: resize lado mayor 300px, `sample_pixels` 3000 px
   determinista seed 42, RGB→Lab vía `ColorConverter`, normalización L∈[0,1],
@@ -59,11 +65,13 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
   seed 42, paridad idéntica al maestro). **Si se exige amortizada pura sin
   KMeans en inferencia, umbral realista ~8-12.**
 
-- **Eval de paridad:** ΔE medio CIE76 vs `ClassicPaletteIdentifier` sobre set
-  fijo de 10 mosaicos (size 64, `jpeg_quality=80`, seed 5000..5010);
-  objetivo ΔE < 5 — alcanzado **3.81** con `extract-v1.keras` híbrido.
+- **Eval de paridad:** ΔE medio **CIE76** vs `ClassicPaletteIdentifier` sobre
+  set fijo de 10 mosaicos (size 64, `jpeg_quality=80`, seeds 5000..5009);
+  objetivo ΔE < 5 — alcanzado **3.8119** medio y **14.1106** máximo con
+  `extract-v1.keras` híbrido (fallback 0/10), por el camino real
+  `inference.extract_image_colors` (`eval/run_eval.py`).
 
-## G — Generadora (`generate-v*.keras`, ~25k params — 24.888 reales)
+## G — Generadora (`generate-v1.keras` = 24.888 params)
 
 - **Entrada:** (10, 3) paleta Lab + máscara multi-hot (10,) de seleccionados +
   embedding de armonía (4→8, opcional).
@@ -71,31 +79,182 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
   cabeza paleta (15) + cabeza compatibilidad (1, sigmoide estilo O'Donovan).
 - **Salida:** N paletas de 5 colores Lab + score (beam/muestreo con temperaturas
   distintas para diversidad); el servicio convierte a HEX y rankea.
-- **Loss:** MSE-Lab + μ·CIEDE2000 aproximado diferenciable + BCE del head de rating.
-- **Datos:** COLOURLovers + Color-Pedia + sintético HSL. **Eval:** CIEDE2000 vs
-  ground truth (referencia paper WikiArt+CGAN: ~23.5 en 5 colores).
-- **Métrica real v1:** `val_CIEDE 24.77` (ref 23.5) con `val_mse 0.029`, `generate-v1.keras` 344 KB, 24.888 params — en línea con referencia.
+- **Loss:** MSE-Lab + μ·distancia euclidiana Lab diferenciable (aproximación
+  **CIE76**, no CIEDE2000; el nombre histórico `CIEDE2000 aprox` era incorrecto)
+  + BCE del head de rating. La loss no cambia en B1.
+- **Datos:** COLOURLovers + Color-Pedia + sintético HSL. **Eval (B1):** CIEDE2000
+  **real** (Sharma et al.) contra ground truth; CIE76 se reporta como referencia
+  histórica. Emparejamiento posicional de los 5 slots.
+- **Línea base `generate-v1.keras`** (40 paletas seed 99, `eval/baseline.json`):
+  CIEDE2000 medio **13.0981**, CIE76 medio **23.5952**, MSE **0.025599**.
+  Score medio **0.9423** (std 0.0319, min 0.8088, max 0.9764). AUC
+  score→buena reconstrucción (CIE76 por paleta ≤ 14) = **0.3516**:
+  anti-correlacionado.
+  `generate-v1.keras` 344 KB, 24.888 params.
 
-## C — Clasificadora (`classify-v*.keras`, ~5k params — 4.836 reales)
+- **Calibración (B2): NO aplicada.** El score está anti-correlacionado con la
+  calidad (AUC 0.3516 < `calibration.require_auc_min = 0.55`), así que
+  `scripts/calibrate.py` **rechaza** Platt y deja en el manifiesto
+  `{method:"platt", calibrated:false, reason:"score_auc_below_threshold",
+  auc:0.3516, a:null, b:null}`. No se invierte el score: eso cambiaría el
+  ranking sin base. La inferencia solo aplicaría `apply_platt` si
+  `calibrated:true` (hoy no ocurre).
 
-- **Entrada:** (10, 3) Lab + (10,) pesos = 40 dims (lo que devuelve E).
-- **Arquitectura:** MLP 40→64→32 (ReLU) → softmax 4
+## C — Clasificadora (`classify-v1.keras` = 4.836 params; `classify-v2.keras` = 5.732)
+
+### v2 (activa) — pipeline-consistente
+
+- **Entrada:** 54 dims de **conjunto** de colores, ordenadas por tono
+  (`app/ml/color_features.palette_features`): 10 filas ×
+  `[sin h, cos h, chroma/128, l/100, weight]` + resumen de estructura de tonos
+  (4 dims). Es invariante al orden de E y entrena con la **misma**
+  representación que usa la inferencia (`extract_image_colors` → `identify_image`).
+- **Arquitectura:** MLP 54→64→32 (ReLU) → softmax 4
   (`complementario|triada|analogo|monocromatica`).
-- **Loss:** cross-entropy + label smoothing 0.05. **Eval:** accuracy top-1 +
-  matriz de confusión; objetivo ≥ 0.85 en sintético, ≥ 0.70 en curado.
-- **Métrica real v1:** `val_accuracy 0.966` (objetivo ≥0.85 superado), `classify-v1.keras` 85 KB, 4.836 params.
+- **Loss:** cross-entropy + label smoothing 0.05.
+- **Eval B1:** `pipeline` E→C sobre el split de test de **80 paletas**
+  (seed 20042; train 600 seed 42, val 120 seed 10042). Los splits son
+  **disjuntos**: las paletas de `training.db` se reparten de forma
+  **estratificada por `harmony_label`** (80/10/10 con semilla fija) en tres
+  buckets, y el split de test usa siempre el bucket de test (índice 2), por lo
+  que cualquier `test_seed` queda fuera de los buckets de train/val. Con al
+  menos 3 paletas por clase cada split recibe una. El relleno sintético usa
+  una semilla por split. Si la DB está vacía el resultado es idéntico al
+  histórico (solo sintéticos).
+  Tests: `tests/test_eval_gates.py` (incluye DB temporal poblada).
+  Métricas: accuracy **0.975**, macro-F1
+  **0.9757**, recall por clase {complementario 0.947, triada 0.957, analogo
+  1.000, monocromatica 1.000}, confusión
+  `[[18,0,0,1],[1,22,0,0],[0,0,16,0],[0,0,0,22]]`, NLL **0.1324**, ECE
+  **0.0916** (20 bins).
 
-## Registro (`backend/models/manifest.json`)
+- **Calibración (B2): temperatura ajustada SOLO en validación.** Split val de
+  120 paletas (seed 10042, disjunto de test): ECE **0.1074 → 0.0210**, NLL
+  **0.1377 → 0.0429**, T = **0.266489** (búsqueda determinista en `log-T`,
+  rango 0.2–5.0). En test (referencia, la T NO se ajusta ahí): ECE
+  **0.0916 → 0.0275**, NLL **0.1324 → 0.0929**, accuracy 0.975 invariante.
+  El manifiesto guarda `{method:"temperature", calibrated:true, temperature,
+  fittedOn:"pipeline-val", n:120, eceBefore/After, nllBefore/After,
+  range:[0.2,5.0]}`. `inference._classify_with_model` aplica
+  `softmax(log(p)/T)` (argmax invariante) y `IdentifyResponse.confidence`
+  pasa a ser la probabilidad calibrada.
+
+### v1 (rollback)
+
+- 40 dims legacy (10·Lab normalizado + 10 pesos, dependiente del orden).
+  Conservada en `versions`/`previous` sin cambios de comportamiento. En el
+  mismo test pipeline de 80: accuracy **0.375**, macro-F1 **0.3519**.
+  No se calibra (`{method:"temperature", calibrated:false, reason:"legacy_40d"}`):
+  su dominio de features no es el de producción y el rollback debe mantener la
+  semántica cruda hasta que exista una versión calibrada propia.
+
+## Registro, versiones y rollback
+
+`backend/models/manifest.json` (schemaVersion 2) es la única fuente de verdad y
+se gestiona con `backend/app/services/model_registry.py` (Python puro, sin
+TF/sklearn) y `scripts/manage_models.py`. Nunca se edita a mano.
+
+Por slot:
+
+- `active`: archivo que sirve la inferencia.
+- `previous`: versión a la que vuelve `rollback` (intercambio reversible).
+- `versions`: todas las versiones registradas. **Nunca se borran**.
+- `files`: metadatos por versión — `sha256`, `createdAt`, `gitSha`,
+  `trainingRunId`, `tfVersion`, `kerasVersion`, `metrics` (las que verifica
+  `python -m eval.run_eval --check-manifest`, tolerancia 10%) y `calibration`
+  (método, `calibrated`, parámetros y motivo de rechazo). Puede incluir
+  `params` y `note`.
+
+Resolución en inferencia (`inference.active_keras_path` →
+`model_registry.resolve`):
+
+1. Usa `active` si el archivo existe y su sha256 coincide.
+2. Si falta o el hash no coincide, intenta `previous` (con su hash) y deja un
+   warning en logs.
+3. Si tampoco, devuelve `None` y la API responde por el fallback clásico con
+   `fallback: true` (nunca se cae por un modelo ausente).
+
+Los manifiestos legacy sin `files`/`sha256` se toleran: el archivo se usa sin
+verificación (`verify` lo reporta como `unhashed`).
+
+**Caché:** `inference.load_keras_model` indexa por `slot:archivo`, de modo que
+un rollback en caliente carga la versión nueva en la siguiente petición. En
+producción se recomienda reiniciar el proceso o llamar a
+`inference.clear_model_cache()` tras promover/rollback.
+
+La caché de features de evaluación (`.eval-cache/`, gitignored) incluye en su
+clave la **versión y los 8 primeros hex del sha256 de la E resuelta**
+(`extract_cache_tag`) y un **hash del contenido exacto del split**
+(`split_content_hash`: HEX canónicos en orden + `harmony_label`). Reentrenar o
+activar otra E, o cambiar las paletas de `training.db`, invalida automáticamente
+las features guardadas en lugar de reutilizar las de otro contenido.
 
 ```json
 {
-  "extract":   { "active": "extract-v1.keras",   "versions": ["extract-v1.keras"] },
-  "generate":  { "active": "generate-v1.keras",  "versions": ["generate-v1.keras"] },
-  "classify":  { "active": "classify-v1.keras",  "versions": ["classify-v1.keras"] }
+  "schemaVersion": 2,
+  "updatedAt": "<ISO-8601>",
+  "extract":  { "active": "extract-v1.keras",  "versions": ["extract-v1.keras"],
+                "files": { "extract-v1.keras": { "sha256": "…", "trainingRunId": 14,
+                                                "metrics": { "delta_e76_mean": 3.8119 } } } },
+  "generate": { "active": "generate-v1.keras", "versions": ["generate-v1.keras"],
+                "files": { "generate-v1.keras": { "sha256": "…", "trainingRunId": 15,
+                  "calibration": { "method": "platt", "calibrated": false,
+                                   "reason": "score_auc_below_threshold", "auc": 0.3516 } } } },
+  "classify": { "active": "classify-v2.keras", "previous": "classify-v1.keras",
+                "versions": ["classify-v1.keras", "classify-v2.keras"],
+                "files": { "classify-v2.keras": {
+                  "sha256": "…", "trainingRunId": 17,
+                  "calibration": { "method": "temperature", "calibrated": true,
+                                   "temperature": 0.266489, "fittedOn": "pipeline-val" } } } }
 }
 ```
 
-`inference.py` carga perezosamente el `active`; si el archivo falta, responde con el
-motor clásico y `"fallback": true` en el DTO (la API nunca falla por un modelo ausente).
-Cada `train_*.py` inserta una fila en `training_runs` con `git_sha`, hiperparámetros y
-métricas.
+### Estado real de las versiones
+
+- **C `classify-v2.keras` activa** (54 dims, pipeline-consistente, temperatura
+  calibrada en validación). `classify-v1.keras` se conserva como `previous`
+  (40 dims legacy, `calibrated:false`, `reason:"legacy_40d"`) para rollback.
+- **G `generate-v1.keras` sin calibrar**: AUC score→reconstrucción 0.3516
+  < 0.55, así que Platt no se aplica.
+- E `extract-v1.keras` activa y sin calibración (`method:"none"`).
+
+Cada `train_*.py` registra la nueva versión con
+`model_registry.register_version` (nunca sobrescribe sin `--force`) e inserta
+una fila en `training_runs` con `git_sha`, hiperparámetros, métricas y
+versiones TF/Keras. Comandos y flujo completo en
+[`retraining.md`](./retraining.md).
+
+## Evaluación y gates (B1 + calibración B2)
+
+- **Fuente única de umbrales:** `backend/eval/thresholds.json`.
+- **CLI:** `python -m eval.run_eval [--strict] [--check-manifest] [--json r.json]
+  [--md r.md] [--slot extract|generate|classify]` desde `backend/`.
+- **Línea base medida:** `backend/eval/baseline.json` (números + versiones +
+  sha256 de los modelos activos).
+- Gates actuales:
+
+| Slot | Métrica | Umbral |
+|---|---|---|
+| extract | ΔE76 medio | ≤ 5.0 |
+| extract | ΔE76 máximo | ≤ 20.0 |
+| generate | CIEDE2000 medio | ≤ 14.5 |
+| generate | MSE | ≤ 0.05 |
+| classify | accuracy (pipeline test) | ≥ 0.90 |
+| classify | macro-F1 | ≥ 0.90 |
+| classify | recall por clase | ≥ 0.85 |
+| classify | ECE calibrada (solo si `calibrated:true`) | ≤ 0.10 |
+| classify | NLL calibrada (solo si `calibrated:true`) | ≤ NLL cruda |
+
+- **Calibración (B2):** `python scripts/calibrate.py --slot classify|generate|all
+  [--dry-run] [--source auto|feedback|reconstruction]` desde `backend/` con
+  `.venv-tf`. C ajusta T en validación y la guarda; G rechaza Platt si
+  AUC < 0.55 (`eval/thresholds.json → calibration.require_auc_min`). El reporte
+  de eval muestra params aplicados, ECE/NLL antes/después y, para G rechazada,
+  `not-applied` sin fallar gates.
+
+- **CIE76 vs CIEDE2000:** `losses.mean_delta_e` y la paridad de E usan CIE76
+  (euclidiana en Lab). G se evalúa con **CIEDE2000 real**
+  (`app/ml/metrics.py`, validado contra Sharma et al. 2005); su loss sigue
+  usando la aproximación euclidiana diferenciable. No confundir ambos números
+  (p.ej. G: CIE76 23.5952 vs CIEDE2000 13.0981).
+- Sin TF, los slots ML se marcan `skipped`: exit 0 salvo `--strict`.
