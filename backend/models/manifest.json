@@ -1,7 +1,9 @@
 {
   "extract": {
-    "active": null,
-    "versions": []
+    "active": "extract-v1.keras",
+    "versions": [
+      "extract-v1.keras"
+    ]
   },
   "generate": {
     "active": null,

@@ -80,7 +80,23 @@ def test_extract_solid_image_returns_weighted_colors():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["fallback"] is True
+    # Con modelo extract activo y TF disponible, fallback es False; sin
+    # modelo o sin TF es True. Acepta ambos para que pase en .venv y .venv-tf.
+    # Verifica coherencia con el manifest cuando TF está disponible.
+    assert data["fallback"] in (True, False)
+    try:
+        import tensorflow  # noqa: F401
+
+        has_tf = True
+    except ImportError:
+        has_tf = False
+    if has_tf:
+        from app.services.inference import active_keras_path
+
+        expects_fallback = active_keras_path("extract") is None
+        assert data["fallback"] is expects_fallback
+    else:
+        assert data["fallback"] is True
     assert 1 <= len(data["colors"]) <= 10
     assert data["colors"][0]["value"] == "#FF0000"
     total_weight = sum(c["weight"] for c in data["colors"])
