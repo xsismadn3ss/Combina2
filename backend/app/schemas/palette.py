@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ColorRole(str, Enum):
@@ -74,6 +74,12 @@ class PaletteResponse(BaseModel):
         description="True si respondió el motor clásico porque no hay red activa.",
     )
 
+    @field_validator("fallback", mode="before")
+    @classmethod
+    def _none_fallback_is_false(cls, value: bool | None) -> bool | None:
+        """Acepta `fallback: null` (p. ej. al reenviar una paleta en /feedback)."""
+        return False if value is None else value
+
 
 class ScoredPalette(BaseModel):
     type: str
@@ -97,9 +103,32 @@ class ExtractResponse(BaseModel):
 
 class IdentifyResponse(BaseModel):
     type: str
-    confidence: float = Field(..., ge=0.0, le=1.0)
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confianza de la armonía identificada. Si `confidenceCalibrated` es "
+            "true, es la probabilidad calibrada (temperatura ajustada en validación)."
+        ),
+    )
     colors: list[Color]
     fallback: bool = False
+    confidenceCalibrated: bool = Field(
+        default=False,
+        description="True si `confidence` viene de la calibración activa del manifiesto.",
+    )
+    needsRetry: bool = Field(
+        default=False,
+        description=(
+            "True si la confianza es menor que `IDENTIFY_MIN_CONFIDENCE` y conviene "
+            "probar con otra foto. Siempre false en el fallback predominante."
+        ),
+    )
+    suggestion: str | None = Field(
+        default=None,
+        description="Sugerencia accionable en español cuando `needsRetry` es true.",
+    )
 
 
 class FeedbackRequest(BaseModel):

@@ -1,20 +1,140 @@
 {
+  "schemaVersion": 2,
+  "updatedAt": "2026-10-20T16:21:39Z",
   "extract": {
     "active": "extract-v1.keras",
     "versions": [
       "extract-v1.keras"
-    ]
+    ],
+    "files": {
+      "extract-v1.keras": {
+        "sha256": "051ce4a01abb215254873e9ffef7dbea1be28f4b95af705f23224669f1d6c4fd",
+        "createdAt": "2026-10-20T01:04:15Z",
+        "gitSha": "58b9381",
+        "trainingRunId": 14,
+        "tfVersion": "2.21.0",
+        "kerasVersion": "3.15.1",
+        "metrics": {
+          "delta_e76_mean": 3.811913230834324,
+          "delta_e76_max": 14.110594083866431,
+          "fallback_count": 0,
+          "n": 10
+        },
+        "calibration": {
+          "method": "none"
+        }
+      }
+    }
   },
   "generate": {
     "active": "generate-v1.keras",
     "versions": [
       "generate-v1.keras"
-    ]
+    ],
+    "files": {
+      "generate-v1.keras": {
+        "sha256": "1c91464fbeadcec20e4c41b91e5a91cef201aba2ffbdb61968d7300c71f50dad",
+        "createdAt": "2026-10-20T01:27:20Z",
+        "gitSha": "4d9e1b8",
+        "trainingRunId": 15,
+        "tfVersion": "2.21.0",
+        "kerasVersion": "3.15.1",
+        "metrics": {
+          "ciede2000_mean": 13.098072480186007,
+          "cie76_mean": 23.59522207279482,
+          "mse": 0.025599423557519912,
+          "score_mean": 0.9422992467880249,
+          "score_std": 0.031888119876384735,
+          "score_min": 0.8087865114212036,
+          "score_max": 0.9764115810394287,
+          "auc_good_reconstruction": 0.3516483516483517,
+          "n": 40
+        },
+        "calibration": {
+          "method": "platt",
+          "calibrated": false,
+          "reason": "score_auc_below_threshold",
+          "auc": 0.3516483516483517,
+          "minAuc": 0.55,
+          "a": null,
+          "b": null
+        }
+      }
+    }
   },
   "classify": {
-    "active": "classify-v1.keras",
+    "active": "classify-v2.keras",
     "versions": [
-      "classify-v1.keras"
-    ]
+      "classify-v1.keras",
+      "classify-v2.keras"
+    ],
+    "previous": "classify-v1.keras",
+    "files": {
+      "classify-v1.keras": {
+        "sha256": "09f0510db270bdd34b38e9f33ef0d091d915385f785095512b95fa68ce3c7ca1",
+        "createdAt": "2026-10-20T01:27:27Z",
+        "gitSha": "4d9e1b8",
+        "trainingRunId": 16,
+        "tfVersion": "2.21.0",
+        "kerasVersion": "3.15.1",
+        "metrics": {
+          "accuracy": 0.375,
+          "macro_f1": 0.35190476190476194,
+          "per_class_recall": {
+            "complementario": 0.47368421052631576,
+            "triada": 0.34782608695652173,
+            "analogo": 0.6875,
+            "monocromatica": 0.09090909090909091
+          },
+          "nll": 1.9661349290360008,
+          "n": 80
+        },
+        "calibration": {
+          "method": "temperature",
+          "calibrated": false,
+          "reason": "legacy_40d"
+        }
+      },
+      "classify-v2.keras": {
+        "sha256": "e04a77fb384eac5c4d486ed4ed9ea448ece48ae88fcf32813f3a00cbf313578e",
+        "createdAt": "2026-10-20T15:43:04Z",
+        "gitSha": "bd0f5d0",
+        "trainingRunId": 17,
+        "tfVersion": "2.21.0",
+        "kerasVersion": "3.15.1",
+        "metrics": {
+          "accuracy": 0.975,
+          "macro_f1": 0.9757309941520468,
+          "per_class_recall": {
+            "complementario": 0.9473684210526315,
+            "triada": 0.9565217391304348,
+            "analogo": 1.0,
+            "monocromatica": 1.0
+          },
+          "recall_min": 0.9473684210526315,
+          "nll": 0.13238009433791706,
+          "ece": 0.09156107753515243,
+          "t_opt": 0.48,
+          "n": 80,
+          "feature_dim": 54,
+          "fallback_extractions": 0
+        },
+        "calibration": {
+          "method": "temperature",
+          "calibrated": true,
+          "temperature": 0.266489,
+          "fittedOn": "pipeline-val",
+          "n": 120,
+          "eceBefore": 0.107413,
+          "eceAfter": 0.020961,
+          "nllBefore": 0.137652,
+          "nllAfter": 0.042864,
+          "range": [
+            0.2,
+            5.0
+          ]
+        }
+      }
+    }
   }
 }

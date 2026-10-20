@@ -7,9 +7,13 @@ Pipeline:
    entrada = (10,3) Lab normalizado + mask (10,) + harmony one-hot (4,) con
    1-3 colores base visibles; salida = paleta completa (5*3=15) + rating sigmoide.
 3. Entrena app.ml.generate_model.build_generate_model con loss
-   MSE-Lab + mu*CIEDE2000 aprox + BCE rating.
-4. Guarda backend/models/generate-v1.keras, activa slot generate en manifest.json
-   e inserta fila en training_runs. Eval: CIEDE2000 vs ground truth.
+   MSE-Lab + mu*CIEDE2000 aproximado (la loss NO cambia; sigue siendo la
+   aproximación euclidiana diferenciable).
+4. Guarda backend/models/<slot>-v<N>.keras (siguiente versión libre o
+   `--version`/`--out`), activa el slot `generate` en `manifest.json` vía
+   `model_registry.register_version` e inserta fila en `training_runs` con
+   versiones TF/Keras. Eval: CIEDE2000 **real** (Sharma) y CIE76
+   vs ground truth, en ``app.ml.metrics``.
 
 Uso (solo .venv-tf):
     backend/.venv-tf/bin/python backend/scripts/train_generate.py --epochs 20 --n-train 800
@@ -19,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,145 +32,36 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.db.sqlite import get_connection
-from app.ml.color_spaces import ColorConverter
-
-MODEL_NAME = "generate-v1.keras"
-HARMONY_LABELS = ["complementario", "triada", "analogo", "monocromatica"]
-HARMONY_TO_IDX = {h: i for i, h in enumerate(HARMONY_LABELS)}
-
-
-def git_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=BACKEND_DIR.parent,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return out.stdout.strip() or "unknown"
-    except Exception:
-        return "unknown"
+from app.ml.benchmarks import (
+    build_generate_palette_list as build_palette_list,
+    palette_to_generate_dataset as palette_to_dataset,
+)
+from app.ml.metrics import palette_delta_e
+from app.services import model_registry
 
 
-def load_db_palettes(limit: int) -> list[dict]:
-    """Lee palettes con harmony_label y rating + hexes ordenados."""
-    try:
-        conn = get_connection()
-    except Exception:
-        return []
-    try:
-        rows = conn.execute(
-            "SELECT p.id, p.rating, p.harmony_label, c.position, c.hex "
-            "FROM palettes p JOIN palette_colors c ON c.palette_id=p.id "
-            "ORDER BY p.id, c.position"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
-    # agrupar por id
-    pal_map: dict[int, dict] = {}
-    for pid, rating, harmony, pos, hexv in rows:
-        if pid not in pal_map:
-            pal_map[pid] = {"hexes": [], "rating": rating, "harmony_label": harmony}
-        pal_map[pid]["hexes"].append(hexv)
-    result = list(pal_map.values())[:limit]
-    return result
+def _denormalize_palette_batch(values) -> np.ndarray:
+    """(N,15) Lab normalizado → (N,5,3) Lab crudo."""
+    arr = np.asarray(values, dtype=np.float64).reshape(-1, 5, 3)
+    out = np.empty_like(arr)
+    out[..., 0] = arr[..., 0] * 100.0
+    out[..., 1] = arr[..., 1] * 128.0
+    out[..., 2] = arr[..., 2] * 128.0
+    return out
 
 
-def synthetic_palette(rng: np.random.RandomState, sigma: float = 2.5) -> dict:
-    """Genera una paleta sintética 5 colores + harmony_label perfecta (offline)."""
-    from app.schemas.palette import HarmonyType
-    from app.services.classic import ClassicPaletteGenerator
+def mean_palette_delta_e(y_true_pal, y_pred_pal, *, metric: str = "ciede2000") -> float:
+    """ΔE medio por paleta con emparejamiento greedy (CIEDE2000 real).
 
-    LABEL_TO_HARMONY = {
-        "complementario": HarmonyType.COMPLEMENTARY,
-        "triada": HarmonyType.TRIADIC,
-        "analogo": HarmonyType.ANALOGOUS,
-        "monocromatica": HarmonyType.MONOCHROMATIC,
-    }
-    gen = ClassicPaletteGenerator()
-    base_hex = "#%02X%02X%02X" % tuple(int(v) for v in rng.randint(0, 256, size=3))
-    label = HARMONY_LABELS[int(rng.randint(0, len(HARMONY_LABELS)))]
-    resp = gen.generate_palette([base_hex], LABEL_TO_HARMONY[label])
-    hexes = [c.value.upper() for c in resp.colors]
-    # pad to 5 with noisy variants
-    while len(hexes) < 5:
-        idx = int(rng.randint(0, len(hexes)))
-        lab = np.array(ColorConverter.hex_to_lab(hexes[idx]), dtype=np.float64)
-        lab += rng.normal(0.0, sigma, size=3)
-        lab[0] = float(np.clip(lab[0], 0.0, 100.0))
-        hexes.append(ColorConverter.lab_to_hex((lab[0], lab[1], lab[2])).upper())
-    return {"hexes": hexes[:5], "rating": None, "harmony_label": label}
-
-
-def build_palette_list(n: int, seed: int) -> list[dict]:
-    pals = load_db_palettes(n)
-    rng = np.random.RandomState(seed + 999_000)
-    while len(pals) < n:
-        pals.append(synthetic_palette(rng))
-    return pals[:n]
-
-
-def palette_to_dataset(palettes: list[dict], seed: int):
-    """Convierte paletas ground truth a arrays de entrenamiento G."""
-    rng = np.random.RandomState(seed)
-    N = len(palettes)
-    X_lab = np.zeros((N, 10, 3), dtype=np.float32)
-    X_mask = np.zeros((N, 10), dtype=np.float32)
-    X_harm = np.zeros((N, 4), dtype=np.float32)
-    Y_pal = np.zeros((N, 15), dtype=np.float32)
-    Y_score = np.zeros((N, 1), dtype=np.float32)
-    for i, pal in enumerate(palettes):
-        hexes = [h.upper() for h in pal["hexes"][:5]]
-        # pad to 5 if fewer
-        while len(hexes) < 5:
-            hexes.append(hexes[-1])
-        # ground truth palette
-        labs = [ColorConverter.lab_normalize(ColorConverter.hex_to_lab(h)) for h in hexes]
-        Y_pal[i] = np.array(labs, dtype=np.float32).reshape(-1)
-        rating = pal.get("rating")
-        if rating is None:
-            Y_score[i, 0] = 1.0
-        else:
-            try:
-                Y_score[i, 0] = float(np.clip(float(rating), 0.0, 1.0))
-            except Exception:
-                Y_score[i, 0] = 1.0
-        # input: 1..3 base colors (prefijo determinista: facilita aprendizaje copiar)
-        k = int(rng.randint(1, 4))  # 1,2,3
-        base_hexes = hexes[:k]
-        for j, bh in enumerate(base_hexes):
-            nlab = ColorConverter.lab_normalize(ColorConverter.hex_to_lab(bh))
-            X_lab[i, j] = np.array(nlab, dtype=np.float32)
-            X_mask[i, j] = 1.0
-        # harmony one-hot
-        harmony = pal.get("harmony_label")
-        if harmony in HARMONY_TO_IDX:
-            X_harm[i, HARMONY_TO_IDX[harmony]] = 1.0
-        else:
-            # random harmony if missing
-            r = int(rng.randint(0, 4))
-            X_harm[i, r] = 1.0
-    return (X_lab, X_mask, X_harm), (Y_pal, Y_score)
-
-
-def mean_ciede2000_approx(y_true_pal, y_pred_pal) -> float:
-    """CIEDE2000 aprox = euclidean mean en Lab desnormalizado (CIE76)."""
-    # y_true/pred shape (N,15) -> (N,5,3) raw Lab
-    def denorm(t):
-        t = np.asarray(t, dtype=np.float64).reshape(-1, 5, 3)
-        out = np.empty_like(t)
-        out[..., 0] = t[..., 0] * 100.0
-        out[..., 1] = t[..., 1] * 128.0
-        out[..., 2] = t[..., 2] * 128.0
-        return out
-
-    pred = denorm(y_pred_pal)
-    true = denorm(y_true_pal)
-    dists = np.sqrt(np.sum((pred - true) ** 2, axis=-1))  # (N,5)
-    return float(np.mean(dists))
+    ``metric="cie76"`` calcula la euclidiana en Lab (métrica histórica que
+    antes se etiquetaba erróneamente como CIEDE2000).
+    """
+    pred = _denormalize_palette_batch(y_pred_pal)
+    true = _denormalize_palette_batch(y_true_pal)
+    values = [
+        palette_delta_e(p, t, metric=metric) for p, t in zip(pred, true)
+    ]
+    return float(np.mean(values)) if values else 0.0
 
 
 def train_and_evaluate(epochs=20, n_train=800, n_val=120, batch=32, lr=1e-3, seed=42, mu=0.1):
@@ -204,56 +98,98 @@ def train_and_evaluate(epochs=20, n_train=800, n_val=120, batch=32, lr=1e-3, see
         verbose=2,
     )
 
-    # eval CIEDE
-    pred_pal, pred_score = model.predict(
+    # eval CIEDE2000 real + CIE76 (histórico) + MSE en espacio normalizado
+    pred_pal, _pred_score = model.predict(
         {"palette_lab": X_lab_va, "mask": X_mask_va, "harmony": X_harm_va}, verbose=0
     )
-    ciede = mean_ciede2000_approx(Y_pal_va, pred_pal)
-    print(f"[train_generate] val CIEDE2000 approx={ciede:.3f}", flush=True)
-    # also compute mse
+    ciede2000 = mean_palette_delta_e(Y_pal_va, pred_pal, metric="ciede2000")
+    cie76 = mean_palette_delta_e(Y_pal_va, pred_pal, metric="cie76")
+    print(
+        f"[train_generate] val CIEDE2000={ciede2000:.3f} CIE76={cie76:.3f}",
+        flush=True,
+    )
     mse = float(np.mean((Y_pal_va - pred_pal) ** 2))
     print(f"[train_generate] val MSE={mse:.5f}", flush=True)
 
-    return model, {"val_cie": ciede, "val_mse": mse, "history": history.history}
+    return model, {
+        "val_ciede2000": ciede2000,
+        "val_cie76": cie76,
+        "val_mse": mse,
+        "history": history.history,
+    }
 
 
-def save_and_register(model, out_path: Path, params: dict, metrics: dict) -> dict:
-    model.save(str(out_path))
+def save_and_register(
+    model, out_path: Path, params: dict, metrics: dict, *, force: bool = False
+) -> dict:
+    tmp_path = out_path.with_name(f".tmp-{out_path.name}")
+    model.save(str(tmp_path))
     # verify reload
     import tensorflow as tf
     from app.ml.generate_model import GENERATE_CUSTOM_OBJECTS
 
-    reloaded = tf.keras.models.load_model(str(out_path), custom_objects=GENERATE_CUSTOM_OBJECTS)
-    assert len(reloaded.outputs) == 2
-
-    manifest_path = BACKEND_DIR / "models" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
-    slot = manifest.setdefault("generate", {"active": None, "versions": []})
-    if MODEL_NAME not in slot.get("versions", []):
-        slot.setdefault("versions", []).append(MODEL_NAME)
-    slot["active"] = MODEL_NAME
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-    conn = get_connection()
     try:
-        conn.execute(
-            "INSERT INTO training_runs(model, git_sha, params_json, metrics_json, keras_path) VALUES(?, ?, ?, ?, ?)",
-            (
-                "generate",
-                git_sha(),
-                json.dumps(params, sort_keys=True),
-                json.dumps(metrics, sort_keys=True),
-                f"backend/models/{MODEL_NAME}",
-            ),
+        reloaded = tf.keras.models.load_model(
+            str(tmp_path), custom_objects=GENERATE_CUSTOM_OBJECTS
         )
-        conn.commit()
-        run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        assert len(reloaded.outputs) == 2
+
+        tf_version, keras_version = model_registry.framework_versions()
+        conn = get_connection()
+        try:
+            cur = conn.execute(
+                "INSERT INTO training_runs(model, git_sha, params_json, metrics_json,"
+                " keras_path, tf_version, keras_version, calibration_json)"
+                " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "generate",
+                    model_registry.git_sha(),
+                    json.dumps(params, sort_keys=True),
+                    json.dumps(metrics, sort_keys=True),
+                    f"backend/models/{out_path.name}",
+                    tf_version,
+                    keras_version,
+                    None,
+                ),
+            )
+            conn.commit()
+            run_id = int(cur.lastrowid or 0)
+        finally:
+            conn.close()
+
+        try:
+            registered = model_registry.register_version(
+                "generate",
+                tmp_path,
+                metrics=metrics,
+                params=params,
+                training_run_id=run_id,
+                force=force,
+                filename=out_path.name,
+            )
+        except Exception:
+            conn = get_connection()
+            try:
+                conn.execute("DELETE FROM training_runs WHERE id = ?", (run_id,))
+                conn.commit()
+            finally:
+                conn.close()
+            raise
     finally:
-        conn.close()
-    return {"keras_path": str(out_path), "training_run_id": run_id}
+        if tmp_path.exists():
+            tmp_path.unlink()
+    return {
+        "keras_path": registered["keras_path"],
+        "filename": registered["filename"],
+        "training_run_id": run_id,
+    }
 
 
 def main(argv: list[str] | None = None) -> dict:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--n-train", type=int, default=800)
@@ -262,9 +198,22 @@ def main(argv: list[str] | None = None) -> dict:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--mu", type=float, default=0.1, help="peso CIEDE")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out", type=str, default=str(BACKEND_DIR / "models" / MODEL_NAME))
-    parser.add_argument("--force", action="store_true", help="Registra aunque CIEDE>=30")
+    parser.add_argument("--version", type=str, default=None,
+                        help="Versión nueva: entero o vN (ej. 2 o v2 -> generate-v2.keras)")
+    parser.add_argument("--out", type=str, default=None,
+                        help="Ruta alternativa (prevalece sobre --version); se registra su nombre real")
+    parser.add_argument("--force", action="store_true",
+                        help="Sobrescribe la versión destino y registra aunque CIEDE>=30")
     args = parser.parse_args(argv)
+
+    out_path = model_registry.target_path(
+        "generate", version=args.version, out=args.out
+    )
+    if out_path.exists() and not args.force:
+        raise SystemExit(
+            f"[train_generate] ERROR: {out_path} ya existe; usa --version N libre "
+            "o --force para sobrescribir (nunca se pisa una versión por accidente)"
+        )
 
     model, eval_metrics = train_and_evaluate(
         epochs=args.epochs, n_train=args.n_train, n_val=args.n_val, batch=args.batch, lr=args.lr, seed=args.seed, mu=args.mu
@@ -278,14 +227,28 @@ def main(argv: list[str] | None = None) -> dict:
         "mu": args.mu,
         "seed": args.seed,
     }
-    metrics = {"val_cie": eval_metrics["val_cie"], "val_mse": eval_metrics["val_mse"]}
-    ok = metrics["val_cie"] < 30.0
+    metrics = {
+        "val_ciede2000": eval_metrics["val_ciede2000"],
+        "val_cie76": eval_metrics["val_cie76"],
+        "val_mse": eval_metrics["val_mse"],
+    }
+    ok = metrics["val_ciede2000"] < 30.0
     saved = None
     if ok or args.force:
-        saved = save_and_register(model, Path(args.out), params, metrics)
-        print(f"[train_generate] guardado {saved['keras_path']} run={saved['training_run_id']} ciede={metrics['val_cie']:.3f}", flush=True)
+        saved = save_and_register(
+            model, out_path, params, metrics, force=args.force
+        )
+        print(
+            f"[train_generate] guardado {saved['keras_path']} run={saved['training_run_id']} "
+            f"CIEDE2000={metrics['val_ciede2000']:.3f}",
+            flush=True,
+        )
     else:
-        print(f"[train_generate] CIEDE {metrics['val_cie']:.3f} >=30 sin --force no registra", flush=True)
+        print(
+            f"[train_generate] CIEDE2000 {metrics['val_ciede2000']:.3f} >=30 "
+            "sin --force no registra",
+            flush=True,
+        )
     result = {"params": params, "metrics": metrics, "ok": ok, "saved": saved}
     print("[train_generate] " + json.dumps(result, sort_keys=True))
     if not ok and not args.force:

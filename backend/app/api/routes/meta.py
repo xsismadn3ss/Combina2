@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.config import APICOnfig
 from app.schemas.palette import ColorRole, HarmonyType
+from app.services import model_registry
 
 harmony_router = APIRouter(
     prefix=f"{APICOnfig.prefix}/harmony", tags=["harmony", "palette"]
@@ -9,6 +10,7 @@ harmony_router = APIRouter(
 colors_router = APIRouter(
     prefix=f"{APICOnfig.prefix}/colors", tags=["colors", "palette"]
 )
+models_router = APIRouter(prefix=APICOnfig.prefix, tags=["models"])
 
 
 @harmony_router.get(
@@ -27,3 +29,47 @@ async def harmony() -> list[HarmonyType]:
 )
 async def get_color_roles() -> list[ColorRole]:
     return list(ColorRole.__members__.values())
+
+
+def _public_file_metadata(metadata: dict | None) -> dict:
+    """Metadatos públicos de una versión (nunca rutas absolutas)."""
+    data = metadata if isinstance(metadata, dict) else {}
+    return {
+        "sha256": data.get("sha256"),
+        "createdAt": data.get("createdAt"),
+        "gitSha": data.get("gitSha"),
+        "trainingRunId": data.get("trainingRunId"),
+        "tfVersion": data.get("tfVersion"),
+        "kerasVersion": data.get("kerasVersion"),
+        "metrics": data.get("metrics") or {},
+        "calibration": data.get("calibration") or {},
+    }
+
+
+@models_router.get(
+    "/models",
+    description=(
+        "Registro de versiones de modelos por slot (read-only). No carga "
+        "TensorFlow ni los .keras; solo lee el manifiesto."
+    ),
+    response_description="Slot -> {active, previous, versions, files}",
+)
+async def get_models() -> dict[str, dict]:
+    manifest = model_registry.load_manifest()
+    result: dict[str, dict] = {}
+    for slot in model_registry.list_slots():
+        entry = manifest.get(slot) or {}
+        if not isinstance(entry, dict):
+            continue
+        files = entry.get("files") or {}
+        result[slot] = {
+            "active": entry.get("active"),
+            "previous": entry.get("previous"),
+            "versions": list(entry.get("versions") or []),
+            "files": {
+                name: _public_file_metadata(metadata)
+                for name, metadata in files.items()
+                if isinstance(name, str)
+            },
+        }
+    return result

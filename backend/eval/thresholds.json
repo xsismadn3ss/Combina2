@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "extract": {
+    "delta_e76_mean_max": 5.0,
+    "delta_e76_max_max": 20.0,
+    "n": 10,
+    "seed": 5000,
+    "size": 64,
+    "jpegQuality": 80
+  },
+  "generate": {
+    "ciede2000_mean_max": 14.5,
+    "mse_max": 0.05,
+    "n": 40,
+    "seed": 99
+  },
+  "classify": {
+    "pipeline_accuracy_min": 0.9,
+    "pipeline_macro_f1_min": 0.9,
+    "pipeline_per_class_recall_min": 0.85,
+    "n": 80,
+    "seed": 20042,
+    "splitSeed": 42
+  },
+  "calibration": {
+    "informational": false,
+    "ece_max": 0.1,
+    "t_min": 0.2,
+    "t_max": 5.0,
+    "require_auc_min": 0.55
+  }
+}

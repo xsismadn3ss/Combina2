@@ -5,7 +5,7 @@ from app.api.routes.extract import router as extract_router
 from app.api.routes.feedback import router as feedback_router
 from app.api.routes.generate import router as generate_router
 from app.api.routes.identify import router as identify_router
-from app.api.routes.meta import colors_router, harmony_router
+from app.api.routes.meta import colors_router, harmony_router, models_router
 
 
 def create_app() -> FastAPI:
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     application.include_router(identify_router)
     application.include_router(harmony_router)
     application.include_router(colors_router)
+    application.include_router(models_router)
     application.include_router(feedback_router)
 
     @application.get("/health", tags=["health"])

@@ -10,6 +10,9 @@ __pycache__
 !backend/training.db
 backend/.venv/
 backend/.venv-tf/
+backend/.eval-cache/
+backend/eval-report.json
+backend/eval-report.md
 web/node_modules/
 web/.next/
 # NOTA: backend/models/*.keras SI se versionan (entregable de producción, ver
