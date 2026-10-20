@@ -48,6 +48,12 @@ export interface IdentifyResponse {
   confidence: number;
   colors: Color[];
   fallback: boolean;
+  /** True si `confidence` viene de la calibración activa del backend. */
+  confidenceCalibrated?: boolean;
+  /** True si la confianza es baja y conviene probar con otra foto. */
+  needsRetry?: boolean;
+  /** Sugerencia accionable en español cuando `needsRetry` es true. */
+  suggestion?: string | null;
 }
 
 export interface FeedbackRequest {

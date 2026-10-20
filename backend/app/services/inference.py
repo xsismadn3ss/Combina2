@@ -1,6 +1,12 @@
 """Inferencia: redes TF si hay `.keras` activo, motor clásico si no.
 
-Registro: `backend/models/manifest.json` -> {"<slot>": {"active": "<file>"|null}}.
+Registro: `backend/models/manifest.json` (ver `app.services.model_registry`),
+con `active`/`previous` y sha256 por versión. La resolución de versión y la
+caché de Keras viven en el registro, de forma que un rollback en caliente no
+devuelve el modelo anterior (clave de caché `slot:archivo`). En producción se
+recomienda reiniciar el proceso o llamar a `clear_model_cache()` tras promover
+o hacer rollback, para liberar el modelo anterior de memoria.
+
 TensorFlow se importa de forma perezosa: sin TF instalado o sin modelo activo,
 todo responde por el fallback clásico con `fallback: true` (la API nunca se cae
 por un modelo ausente).
@@ -9,12 +15,18 @@ El path con modelo E activo NO importa sklearn: `app.services.classic` solo se
 importa dentro de las funciones de fallback.
 """
 
-import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from app.config import identify_min_confidence
+from app.ml.color_features import (
+    LOW_INFO_CHROMA_MAX,
+    palette_features,
+    palette_features_legacy,
+    palette_is_low_information,
+)
 from app.ml.color_spaces import ColorConverter
 from app.schemas.palette import (
     Color,
@@ -25,9 +37,11 @@ from app.schemas.palette import (
     IdentifyResponse,
     ScoredPalette,
 )
+from app.services import model_registry
 
-MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-MANIFEST_PATH = MODELS_DIR / "manifest.json"
+# Alias de compatibilidad (tests y scripts leen estas rutas).
+MODELS_DIR = model_registry.MODELS_DIR
+MANIFEST_PATH = model_registry.MANIFEST_PATH
 
 _identifier: Any | None = None
 _generator: Any | None = None
@@ -35,17 +49,70 @@ _keras_cache: dict[str, Any] = {}
 
 
 def load_manifest() -> dict[str, Any]:
-    if not MANIFEST_PATH.exists():
-        return {}
-    return json.loads(MANIFEST_PATH.read_text())
+    """Manifiesto del registro (tolerante a ausencia/corrupción)."""
+    return model_registry.load_manifest()
 
 
 def active_keras_path(slot: str) -> Path | None:
-    active = load_manifest().get(slot, {}).get("active")
-    if not active:
+    """Ruta resuelta del slot: activo verificado o, si falla, `previous`."""
+    return model_registry.resolve(slot, manifest=load_manifest())
+
+
+def load_calibration(slot: str) -> dict[str, Any]:
+    """Metadatos de calibración de la versión **realmente resuelta**.
+
+    Devuelve ``{}`` si falta el manifiesto, el slot/archivo o la clave
+    ``calibration``. No importa TF ni sklearn: seguro en el path de inferencia.
+    """
+    try:
+        manifest = load_manifest()
+        path = active_keras_path(slot)
+        if path is None:
+            return {}
+        entry = manifest.get(slot) or {}
+        metadata = (entry.get("files") or {}).get(path.name) or {}
+        calibration = metadata.get("calibration") if isinstance(metadata, dict) else None
+        return calibration if isinstance(calibration, dict) else {}
+    except Exception:
+        return {}
+
+
+def clear_model_cache() -> None:
+    """Vacía la caché de modelos Keras (útil tras promover/rollback en caliente)."""
+    _keras_cache.clear()
+
+
+def _active_temperature(slot: str) -> float | None:
+    """Temperatura válida de calibración activa, o None si no se aplica."""
+    calibration = load_calibration(slot)
+    if calibration.get("method") != "temperature":
         return None
-    path = MODELS_DIR / active
-    return path if path.exists() else None
+    if calibration.get("calibrated") is not True:
+        return None
+    try:
+        temperature = float(calibration.get("temperature"))
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(temperature) or temperature <= 0.0 or abs(temperature - 1.0) < 1e-12:
+        return None
+    return temperature
+
+
+def _apply_active_platt(score: float) -> float:
+    """Aplica Platt si G tiene ``calibration.calibrated: true``; si no, no-op."""
+    calibration = load_calibration("generate")
+    if calibration.get("method") != "platt" or calibration.get("calibrated") is not True:
+        return score
+    try:
+        a = float(calibration.get("a"))
+        b = float(calibration.get("b"))
+    except (TypeError, ValueError):
+        return score
+    if not (np.isfinite(a) and np.isfinite(b)):
+        return score
+    from app.ml.calibration import apply_platt
+
+    return float(np.clip(apply_platt(score, a, b), 0.0, 1.0))
 
 
 def _classic_identifier() -> Any:
@@ -68,12 +135,19 @@ def _classic_generator() -> Any:
 
 
 def load_keras_model(slot: str) -> Any | None:
-    """Carga perezosa del .keras activo del slot, o None si no hay red disponible."""
-    if slot in _keras_cache:
-        return _keras_cache[slot]
+    """Carga perezosa del `.keras` resuelto del slot, o None si no hay red.
+
+    La caché se indexa por ``slot:archivo``: si se hace rollback o se activa
+    otra versión, la siguiente llamada carga el archivo nuevo. Para liberar el
+    modelo anterior en un proceso de larga vida, reinicia o usa
+    ``clear_model_cache()``.
+    """
     path = active_keras_path(slot)
     if path is None:
         return None
+    cache_key = f"{slot}:{path.name}"
+    if cache_key in _keras_cache:
+        return _keras_cache[cache_key]
     try:
         import sys
 
@@ -110,7 +184,10 @@ def load_keras_model(slot: str) -> Any | None:
                 del sys.modules[mod]
     except Exception:
         return None
-    _keras_cache[slot] = model
+    # Descarta entradas antiguas del mismo slot para no retener modelos obsoletos.
+    for key in [k for k in _keras_cache if k.startswith(f"{slot}:")]:
+        _keras_cache.pop(key, None)
+    _keras_cache[cache_key] = model
     return model
 
 
@@ -200,6 +277,17 @@ def _extract_with_model(model: Any, image_bytes: bytes) -> list[Color] | None:
 
 _HARMONY_LABELS = ["complementario", "triada", "analogo", "monocromatica"]
 _HARMONY_TO_IDX = {h: i for i, h in enumerate(_HARMONY_LABELS)}
+_RETRY_SUGGESTION = (
+    "La foto no tiene suficiente variedad de color; prueba con mejor luz o una "
+    "imagen más colorida."
+)
+_GRAY_SUGGESTION = (
+    "La imagen es casi monocroma (gris o un solo tono); prueba con una foto "
+    "con varios colores bien iluminada."
+)
+# Por debajo de este croma máximo la imagen puede no aportar señal de armonía;
+# el guard exige además poca variedad de tono (ver `palette_is_low_information`).
+COLORFULNESS_RETRY_MIN = LOW_INFO_CHROMA_MAX
 
 
 def generate_palettes(
@@ -375,6 +463,8 @@ def _generate_with_model(
         else:
             base_score = float(np.asarray(score_arr).reshape(-1)[0])
         base_score = float(np.clip(base_score, 0.0, 1.0))
+        # Calibración Platt (no-op mientras generate-v1 esté rechazado por AUC).
+        base_score = _apply_active_platt(base_score)
         # base palette 15 -> 5x3
         if pal_flat.size != 15:
             raise ValueError("Paleta G debe ser 15 valores")
@@ -446,13 +536,67 @@ def identify_image(image_bytes: bytes) -> IdentifyResponse:
         result = _classify_with_model(model, colors)
         if result is not None:
             label, confidence = result
+            calibrated = _active_temperature("classify") is not None
+            low_information = palette_is_low_information(colors)
+            low_confidence = confidence < identify_min_confidence()
+            needs_retry = low_information or low_confidence
+            if low_information:
+                suggestion = _GRAY_SUGGESTION
+            elif low_confidence:
+                suggestion = _RETRY_SUGGESTION
+            else:
+                suggestion = None
             return IdentifyResponse(
-                type=label, confidence=confidence, colors=colors, fallback=False
+                type=label,
+                confidence=confidence,
+                colors=colors,
+                fallback=False,
+                confidenceCalibrated=calibrated,
+                needsRetry=needs_retry,
+                suggestion=suggestion,
             )
     # Fallback: sin red C no hay clasificación; se reporta predominancia.
+    # No tiene sentido pedir reintento: el fallback no intenta clasificar.
     return IdentifyResponse(
-        type="predominant", confidence=1.0, colors=colors, fallback=True
+        type="predominant",
+        confidence=1.0,
+        colors=colors,
+        fallback=True,
+        confidenceCalibrated=False,
+        needsRetry=False,
+        suggestion=None,
     )
+
+
+def _classify_input_dim(model: Any) -> int | None:
+    """Dimensión de entrada del modelo C, o None si no se puede detectar.
+
+    Soporta `model.input_shape` (tupla `(d,)` o `(None, d)` en Keras 3) y
+    `model.inputs[0].shape[-1]`. Cualquier fake sin esos atributos → None
+    (la inferencia usa entonces las features legacy de 40 dims).
+    """
+    shape = getattr(model, "input_shape", None)
+    if shape is None:
+        inputs = getattr(model, "inputs", None)
+        try:
+            if inputs:
+                shape = inputs[0].shape
+        except Exception:
+            shape = None
+    dim: Any = None
+    if isinstance(shape, (list, tuple)):
+        if shape and isinstance(shape[0], (list, tuple)):
+            # lista de shapes de entrada (modelo multi-input): usa la primera
+            dim = shape[0][-1] if shape[0] else None
+        elif shape:
+            dim = shape[-1]
+    elif isinstance(shape, int):
+        dim = shape
+    try:
+        dim = int(dim) if dim is not None else None
+    except (TypeError, ValueError):
+        return None
+    return dim if dim is not None and dim > 0 else None
 
 
 def _classify_with_model(
@@ -460,35 +604,25 @@ def _classify_with_model(
 ) -> tuple[str, float] | None:
     """Inferencia de la red C sobre la paleta extraída.
 
-    Entrada 40 dims (10*Lab +10 pesos) desde Colors con weight.
+    Detecta la dimensión de entrada del modelo: 54 dims (`classify-v2`,
+    features de conjunto ordenadas por tono) o, por defecto/rollback,
+    40 dims legacy (`classify-v1`: 10*Lab +10 pesos).
+
+    Si el `.keras` activo tiene ``calibration.calibrated: true`` con
+    ``method: temperature``, la confianza devuelta es la probabilidad
+    calibrada; el ``type`` (argmax) es invariante a la temperatura.
     Retorna (type, confidence) o None si falla.
     """
     try:
         if not colors:
             return None
-        labs: list[tuple[float, float, float]] = []
-        weights: list[float] = []
-        for c in colors[:10]:
-            try:
-                lab_raw = ColorConverter.hex_to_lab(c.value)
-            except ValueError:
-                return None
-            nlab = ColorConverter.lab_normalize(lab_raw)
-            labs.append(nlab)
-            w = c.weight if c.weight is not None else 1.0 / max(len(colors), 1)
-            weights.append(float(w))
-        while len(labs) < 10:
-            labs.append(labs[-1] if labs else (0.5, 0.0, 0.0))
-            weights.append(0.0)
-        # normaliza pesos si no suman 1 (por padding)
-        w_arr = np.array(weights[:10], dtype=np.float64)
-        w_arr = np.clip(w_arr, 0.0, None)
-        total = float(w_arr.sum())
-        if not np.isfinite(total) or total <= 0:
-            return None
-        w_arr = w_arr / total
-        labs_arr = np.array(labs[:10], dtype=np.float32).reshape(-1)  # 30
-        feat = np.concatenate([labs_arr, w_arr.astype(np.float32)])[None, :].astype(np.float32)  # (1,40)
+        input_dim = _classify_input_dim(model)
+        if input_dim == 54:
+            feat = palette_features(colors, input_dim=54)
+        else:
+            # 40 legacy, también cuando la dimensión no se puede detectar.
+            feat = palette_features_legacy(colors)
+        feat = np.asarray(feat, dtype=np.float32).reshape(1, -1)
         pred = model.predict(feat, verbose=0)
         pred = np.asarray(pred, dtype=np.float64)
         if pred.ndim == 2 and pred.shape[0] == 1:
@@ -501,6 +635,11 @@ def _classify_with_model(
         s = float(pred.sum())
         if abs(s - 1.0) > 1e-3 and s > 0:
             pred = pred / s
+        temperature = _active_temperature("classify")
+        if temperature is not None:
+            from app.ml.calibration import apply_temperature
+
+            pred = apply_temperature(pred, temperature)
         idx = int(np.argmax(pred))
         if idx < 0 or idx >= len(_HARMONY_LABELS):
             return None

@@ -12,8 +12,10 @@ Pipeline:
 4. Entrena `app.ml.extract_model.build_extract_model` con la loss
    MSE-Lab + entropía (`app.ml.losses`) y evalúa paridad ΔE vs el KMeans
    real (`ClassicPaletteIdentifier`) en un set fijo.
-5. Guarda `backend/models/extract-v1.keras`, activa el slot `extract` en
-   `manifest.json` e inserta la fila en `training_runs`.
+5. Guarda `backend/models/<slot>-v<N>.keras` (por defecto la siguiente versión
+   libre; `--version`/`--out` permiten elegir), activa el slot `extract` en
+   `manifest.json` vía `model_registry.register_version` e inserta la fila en
+   `training_runs` (con versiones TF/Keras).
 
 Uso (venv SOLO-entrenamiento con TensorFlow, ver `backend/README.md`)::
 
@@ -26,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -36,6 +37,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.db.sqlite import get_connection  # noqa: E402
+from app.ml.benchmarks import (  # noqa: E402
+    build_extract_palette_list as build_palette_list,
+    synthesize_extract_dataset as synthesize_dataset,
+)
 from app.ml.color_spaces import ColorConverter  # noqa: E402
 from app.ml.datasets import (  # noqa: E402
     SAMPLE_PIXELS,
@@ -52,96 +57,10 @@ from app.ml.losses import (  # noqa: E402
     make_extract_sinkhorn_loss,
     match_by_distance,
 )
+from app.services import model_registry  # noqa: E402
 from app.services.inference import extract_colors_from_outputs  # noqa: E402
 
-MODEL_NAME = "extract-v1.keras"
 PARITY_TARGET = 5.0
-
-
-def git_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=BACKEND_DIR.parent,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return out.stdout.strip() or "unknown"
-    except Exception:
-        return "unknown"
-
-
-def load_db_palettes(limit: int) -> list[list[str]]:
-    """HEX por paleta desde `training.db` (vacío si no hay DB/contenido)."""
-    try:
-        conn = get_connection()
-    except Exception:
-        return []
-    try:
-        rows = conn.execute(
-            "SELECT palette_id, hex FROM palette_colors"
-            " ORDER BY palette_id, position"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
-    palettes: list[list[str]] = []
-    current: list[str] = []
-    last_pid = None
-    for pid, hexv in rows:
-        if last_pid is None or pid != last_pid:
-            if current:
-                palettes.append(current)
-                if len(palettes) >= limit:
-                    break
-            current = [hexv]
-            last_pid = pid
-        else:
-            current.append(hexv)
-    if current and len(palettes) < limit:
-        palettes.append(current)
-    return palettes[:limit]
-
-
-def random_palette(rng: np.random.RandomState) -> list[str]:
-    n = int(rng.randint(3, 7))
-    return ["#%02X%02X%02X" % tuple(int(v) for v in rng.randint(0, 256, size=3)) for _ in range(n)]
-
-
-def build_palette_list(n: int, seed: int) -> list[list[str]]:
-    """Paletas DB (hasta `n`) + relleno aleatorio offline. Determinista."""
-    palettes = load_db_palettes(n)
-    rng = np.random.RandomState(seed + 1_000_000)
-    while len(palettes) < n:
-        palettes.append(random_palette(rng))
-    return palettes[:n]
-
-
-def synthesize_dataset(
-    palettes: list[list[str]], *, seed: int, size: int, quality_lo: int = 60,
-    quality_hi: int = 95,
-) -> list[bytes]:
-    """Un mosaico JPEG por paleta (pesos Dirichlet, orden aleatorio)."""
-    from app.ml.datasets import synthesize_mosaic
-
-    rng = np.random.RandomState(seed)
-    images: list[bytes] = []
-    for hexes in palettes:
-        order = rng.permutation(len(hexes))
-        hexes_s = [hexes[i] for i in order]
-        weights = rng.dirichlet(np.ones(len(hexes_s)))
-        images.append(
-            synthesize_mosaic(
-                hexes_s,
-                list(weights),
-                size=size,
-                seed=int(rng.randint(0, 2**31 - 1)),
-                jpeg_quality=int(rng.randint(quality_lo, quality_hi + 1)),
-            )
-        )
-    return images
 
 
 def teacher_targets(image_bytes: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -380,44 +299,77 @@ def parity_vs_classic(model, images: list[bytes]) -> dict:
     return {"mean_delta_e": float(np.mean(vals)), "n": len(vals), "max": float(np.max(vals))}
 
 
-def save_and_register(model, out_path: Path, params: dict, metrics: dict) -> dict:
+def save_and_register(
+    model, out_path: Path, params: dict, metrics: dict, *, force: bool = False
+) -> dict:
     import tensorflow as tf
 
     from app.ml.extract_model import EXTRACT_CUSTOM_OBJECTS
 
-    model.save(str(out_path))
-    reloaded = tf.keras.models.load_model(str(out_path), custom_objects=EXTRACT_CUSTOM_OBJECTS)
-    assert len(reloaded.outputs) == 3
-
-    manifest_path = BACKEND_DIR / "models" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
-    slot = manifest.setdefault("extract", {"active": None, "versions": []})
-    if MODEL_NAME not in slot.get("versions", []):
-        slot.setdefault("versions", []).append(MODEL_NAME)
-    slot["active"] = MODEL_NAME
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-    conn = get_connection()
+    tmp_path = out_path.with_name(f".tmp-{out_path.name}")
+    model.save(str(tmp_path))
     try:
-        conn.execute(
-            "INSERT INTO training_runs(model, git_sha, params_json, metrics_json, keras_path)"
-            " VALUES(?, ?, ?, ?, ?)",
-            (
-                "extract",
-                git_sha(),
-                json.dumps(params, sort_keys=True),
-                json.dumps(metrics, sort_keys=True),
-                f"backend/models/{MODEL_NAME}",
-            ),
+        reloaded = tf.keras.models.load_model(
+            str(tmp_path), custom_objects=EXTRACT_CUSTOM_OBJECTS
         )
-        conn.commit()
-        run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        assert len(reloaded.outputs) == 3
+
+        tf_version, keras_version = model_registry.framework_versions()
+        conn = get_connection()
+        try:
+            cur = conn.execute(
+                "INSERT INTO training_runs(model, git_sha, params_json, metrics_json,"
+                " keras_path, tf_version, keras_version, calibration_json)"
+                " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "extract",
+                    model_registry.git_sha(),
+                    json.dumps(params, sort_keys=True),
+                    json.dumps(metrics, sort_keys=True),
+                    f"backend/models/{out_path.name}",
+                    tf_version,
+                    keras_version,
+                    None,
+                ),
+            )
+            conn.commit()
+            run_id = int(cur.lastrowid or 0)
+        finally:
+            conn.close()
+
+        try:
+            registered = model_registry.register_version(
+                "extract",
+                tmp_path,
+                metrics=metrics,
+                params=params,
+                training_run_id=run_id,
+                force=force,
+                filename=out_path.name,
+            )
+        except Exception:
+            conn = get_connection()
+            try:
+                conn.execute("DELETE FROM training_runs WHERE id = ?", (run_id,))
+                conn.commit()
+            finally:
+                conn.close()
+            raise
     finally:
-        conn.close()
-    return {"keras_path": str(out_path), "training_run_id": run_id}
+        if tmp_path.exists():
+            tmp_path.unlink()
+    return {
+        "keras_path": registered["keras_path"],
+        "filename": registered["filename"],
+        "training_run_id": run_id,
+    }
 
 
 def main(argv: list[str] | None = None) -> dict:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--n-train", type=int, default=600)
@@ -443,9 +395,23 @@ def main(argv: list[str] | None = None) -> dict:
                         help="No inicializa prototipos desde datos")
     parser.add_argument("--use-kmeans", action="store_true",
                         help="Usa HardKMeans perfecto (sin entrenar, para paridad <5)")
-    parser.add_argument("--out", type=str, default=str(BACKEND_DIR / "models" / MODEL_NAME))
-    parser.add_argument("--force", action="store_true", help="Registra aunque ΔE>=5")
+    parser.add_argument("--version", type=str, default=None,
+                        help="Versión nueva: entero o vN (ej. 2 o v2 -> extract-v2.keras)")
+    parser.add_argument("--out", type=str, default=None,
+                        help="Ruta alternativa (prevalece sobre --version); se registra su nombre real")
+    parser.add_argument("--force", action="store_true",
+                        help="Sobrescribe la versión destino y registra aunque ΔE>=5")
     args = parser.parse_args(argv)
+
+    slot = "extract"
+    out_path = model_registry.target_path(
+        slot, version=args.version, out=args.out
+    )
+    if out_path.exists() and not args.force:
+        raise SystemExit(
+            f"[train_extract] ERROR: {out_path} ya existe; usa --version N libre "
+            "o --force para sobrescribir (nunca se pisa una versión por accidente)"
+        )
 
     import tensorflow as tf
 
@@ -510,7 +476,9 @@ def main(argv: list[str] | None = None) -> dict:
     ok = parity["mean_delta_e"] < PARITY_TARGET
     saved = None
     if ok or args.force:
-        saved = save_and_register(model, Path(args.out), params, metrics)
+        saved = save_and_register(
+            model, out_path, params, metrics, force=args.force
+        )
         print(f"[train_extract] guardado {saved['keras_path']} run={saved['training_run_id']}", flush=True)
     else:
         print(

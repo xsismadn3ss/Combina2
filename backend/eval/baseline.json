@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-20T15:52:00Z",
+  "gitSha": "bd0f5d0",
+  "environment": {
+    "python": "3.12.14",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "numpy": "2.5.4",
+    "scikit-learn": "1.9.1"
+  },
+  "thresholdsFile": "eval/thresholds.json",
+  "models": {
+    "extract": {
+      "active": "extract-v1.keras",
+      "sha256": "051ce4a01abb215254873e9ffef7dbea1be28f4b95af705f23224669f1d6c4fd"
+    },
+    "generate": {
+      "active": "generate-v1.keras",
+      "sha256": "1c91464fbeadcec20e4c41b91e5a91cef201aba2ffbdb61968d7300c71f50dad"
+    },
+    "classify": {
+      "active": "classify-v2.keras",
+      "sha256": "e04a77fb384eac5c4d486ed4ed9ea448ece48ae88fcf32813f3a00cbf313578e",
+      "previous": "classify-v1.keras",
+      "previousSha256": "09f0510db270bdd34b38e9f33ef0d091d915385f785095512b95fa68ce3c7ca1"
+    }
+  },
+  "extract": {
+    "description": "Paridad de E contra el KMeans clásico por el camino real de inferencia (extract_image_colors → emparejamiento greedy CIE76).",
+    "dataset": {
+      "builder": "app.ml.benchmarks.extract_eval_cases",
+      "n": 10,
+      "seed0": 5000,
+      "seeds": "5000..5009",
+      "size": 64,
+      "jpegQuality": 80,
+      "reference": "app.services.classic.ClassicPaletteIdentifier"
+    },
+    "metrics": {
+      "delta_e76_mean": 3.811913230834324,
+      "delta_e76_max": 14.110594083866431,
+      "fallback_count": 0,
+      "n": 10
+    }
+  },
+  "generate": {
+    "description": "Predicción cruda de G sobre 40 paletas; CIEDE2000 real y CIE76 con emparejamiento posicional (los 5 slots generados están alineados con ground truth).",
+    "dataset": {
+      "builder": "app.ml.benchmarks.generate_eval_dataset",
+      "n": 40,
+      "seed": 99,
+      "pairing": "positional"
+    },
+    "metrics": {
+      "ciede2000_mean": 13.098072480186007,
+      "cie76_mean": 23.59522207279482,
+      "mse": 0.025599423557519913,
+      "score_mean": 0.9422992467880249,
+      "score_std": 0.031888119876384735,
+      "score_min": 0.8087865114212036,
+      "score_max": 0.9764115810394287,
+      "auc_good_reconstruction": 0.3516483516483517,
+      "good_reconstruction_cie76_max": 14.0,
+      "n": 40
+    },
+    "notes": [
+      "El nombre histórico mean_ciede2000_approx calculaba en realidad CIE76; la evaluación usa ahora CIEDE2000 real.",
+      "AUC(score → buena reconstrucción) con buena = CIE76 medio por paleta ≤ 14.0: 0.3516, anti-correlacionado. B2 rechaza la calibración Platt (AUC < 0.55) y deja calibrated:false sin invertir el score."
+    ]
+  },
+  "classify": {
+    "description": "Pipeline E→C real sobre el split de test estratificado de 80 paletas (bucket test de la partición por harmony_label).",
+    "dataset": {
+      "builder": "app.ml.benchmarks.classify_eval_split",
+      "n": 80,
+      "seed": 20042,
+      "splitSeed": 42,
+      "featureDim": 54,
+      "disjointness": "Partición estratificada 80/10/10 por harmony_label de las paletas etiquetadas de training.db (semilla fija 7313); cada split recibe un bucket disjunto y el test usa siempre el bucket de test, por lo que no hay solape con train/val para ningún test_seed (verificado en tests, incluido test_seed=43). Con training.db sin paletas cada split es un flujo sintético determinista distinto y el resultado es idéntico al histórico."
+    },
+    "metrics": {
+      "accuracy": 0.975,
+      "macro_f1": 0.9757309941520468,
+      "per_class_recall": {
+        "complementario": 0.9473684210526315,
+        "triada": 0.9565217391304348,
+        "analogo": 1.0,
+        "monocromatica": 1.0
+      },
+      "confusion": [
+        [18, 0, 0, 1],
+        [1, 22, 0, 0],
+        [0, 0, 16, 0],
+        [0, 0, 0, 22]
+      ],
+      "nll": 0.13238009433791706,
+      "ece": 0.09156107753515243,
+      "t_opt": 0.48,
+      "nll_at_t_opt": 0.07169233714055219,
+      "ece_at_t_opt": 0.0292124267713127,
+      "calibration_applied": {
+        "method": "temperature",
+        "temperature_val": 0.266489,
+        "fittedOn": "pipeline-val",
+        "ece": 0.027534738401620452,
+        "nll": 0.09290839885553148,
+        "accuracy": 0.975
+      },
+      "n": 80
+    },
+    "v1_reference": {
+      "description": "classify-v1 (40 dims legacy) evaluado en el MISMO split pipeline de test.",
+      "accuracy": 0.375,
+      "macro_f1": 0.35190476190476194,
+      "nll": 1.9661349290360008
+    },
+    "calibrationNote": "ECE con 20 bins (convención de esta línea base). B2 ajusta la temperatura en validación (T=0.266489) y la aplica: en test ECE 0.0916→0.0275 y NLL 0.1324→0.0929. t_opt=0.48 es solo la medición test (no la T aplicada)."
+  },
+  "notes": [
+    "Números medidos con los modelos activos del manifiesto; los gates de eval/thresholds.json pasan con este baseline.",
+    "CIEDE2000 validado contra Sharma et al. (2005); par 2.6772/-79.7751 vs 0/-82.7485 = 2.0425.",
+    "training.db se conserva como evidencia (runs 14/15/16/17)."
+  ]
+}

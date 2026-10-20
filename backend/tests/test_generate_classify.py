@@ -1,8 +1,10 @@
 # Tests Fase 4 (issue #20): redes G y C + POST /generate /identify
 # Sin TF (runtime 3.14) corren todos menos los que requieren .keras, que hacen skip.
 import io
+import json
 import re
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,11 +14,15 @@ from PIL import Image
 import app.services.inference as inference
 from app.config import APICOnfig
 from app.main import app
+from app.ml import benchmarks, metrics
 from app.ml.color_spaces import ColorConverter
 from app.schemas.palette import ColorRole, HarmonyType
 
 client = TestClient(app)
 HEX_RE = re.compile(r"^#[0-9A-F]{6}$")
+THRESHOLDS = json.loads(
+    (Path(__file__).resolve().parents[1] / "eval" / "thresholds.json").read_text()
+)
 VALID_ROLES = {e.value for e in ColorRole}
 VALID_HARMONY = {h.value for h in HarmonyType}
 
@@ -266,6 +272,13 @@ def test_identify_endpoint_returns_valid():
     assert resp.status_code == 200
     data = resp.json()
     assert "type" in data and "confidence" in data and "colors" in data and "fallback" in data
+    # Contrato B2: campos aditivos siempre presentes.
+    assert isinstance(data["confidenceCalibrated"], bool)
+    assert isinstance(data["needsRetry"], bool)
+    assert data["suggestion"] is None or isinstance(data["suggestion"], str)
+    if data["fallback"]:
+        assert data["needsRetry"] is False
+        assert data["suggestion"] is None
     assert 1 <= len(data["colors"]) <= 10
     for c in data["colors"]:
         assert HEX_RE.match(c["value"])
@@ -317,6 +330,89 @@ def test_identify_classify_direct_without_sklearn(monkeypatch):
     assert "sklearn" not in sys.modules
 
 
+def _classify_colors():
+    from app.schemas.palette import Color
+
+    return [
+        Color(value="#FF0000", role="predominant", weight=0.4),
+        Color(value="#00FF00", role="predominant", weight=0.3),
+        Color(value="#0000FF", role="predominant", weight=0.2),
+        Color(value="#FFFF00", role="predominant", weight=0.1),
+    ]
+
+
+@pytest.mark.parametrize("input_dim", [54, 40])
+def test_classify_uses_dim_detected_from_model(input_dim):
+    """v2 (54 dims) y v1 (40 legacy) se distinguen por `input_shape`."""
+    seen = {}
+
+    class _FakeC:
+        input_shape = (None, input_dim)
+
+        def predict(self, x, verbose=0):
+            seen["shape"] = np.asarray(x).shape
+            return np.array([[0.7, 0.1, 0.1, 0.1]], dtype=np.float32)
+
+    result = inference._classify_with_model(_FakeC(), _classify_colors())
+    assert result is not None
+    assert result[0] == "complementario"
+    assert seen["shape"] == (1, input_dim)
+
+
+def test_classify_detects_dim_from_model_inputs():
+    class _FakeC:
+        def __init__(self):
+            class _Input:
+                shape = (None, 54)
+
+            self.inputs = [_Input()]
+
+        def predict(self, x, verbose=0):
+            assert np.asarray(x).shape == (1, 54)
+            return np.array([[0.1, 0.1, 0.1, 0.7]], dtype=np.float32)
+
+    result = inference._classify_with_model(_FakeC(), _classify_colors())
+    assert result is not None
+    assert result[0] == "monocromatica"
+
+
+def test_classify_fake_without_input_shape_uses_legacy_40():
+    """Compatibilidad con fakes existentes: sin `input_shape` → 40 dims."""
+    class _FakeC:
+        def predict(self, x, verbose=0):
+            assert np.asarray(x).shape == (1, 40)
+            return np.array([[0.9, 0.03, 0.03, 0.04]], dtype=np.float32)
+
+    result = inference._classify_with_model(_FakeC(), _classify_colors())
+    assert result is not None
+    assert result[0] == "complementario"
+
+
+def test_real_classify_models_support_v1_and_v2():
+    """Con TF: el v2 activo y el v1 (rollback, 40 dims) infieren sin sklearn."""
+    pytest.importorskip("tensorflow")
+    v1_path = inference.MODELS_DIR / "classify-v1.keras"
+    v2_path = inference.MODELS_DIR / "classify-v2.keras"
+    if not v1_path.exists() or not v2_path.exists():
+        pytest.skip("faltan classify-v1/v2.keras")
+    import tensorflow as tf
+
+    from app.schemas.palette import Color
+
+    colors = [
+        Color(value="#FF0000", role="predominant", weight=0.3),
+        Color(value="#00FFFF", role="predominant", weight=0.7),
+    ]
+    for path, dim in ((v1_path, 40), (v2_path, 54)):
+        model = tf.keras.models.load_model(str(path))
+        assert inference._classify_input_dim(model) == dim
+        result = inference._classify_with_model(model, colors)
+        assert result is not None
+        label, conf = result
+        assert label in VALID_HARMONY
+        assert 0.0 <= conf <= 1.0
+
+
 def test_identify_failure_falls_back(monkeypatch):
     class _BrokenC:
         def predict(self, *a, **kw):
@@ -333,45 +429,72 @@ def test_identify_failure_falls_back(monkeypatch):
 
 # --- Métricas G y C ---------
 
-def test_g_ciede_below_30_or_report():
-    tf = pytest.importorskip("tensorflow")
+def _denormalize_palette_batch(values):
+    arr = np.asarray(values, dtype=np.float64).reshape(-1, 5, 3)
+    out = np.empty_like(arr)
+    out[..., 0] = arr[..., 0] * 100.0
+    out[..., 1] = arr[..., 1] * 128.0
+    out[..., 2] = arr[..., 2] * 128.0
+    return out
+
+
+def test_g_ciede2000_within_thresholds():
+    pytest.importorskip("tensorflow")
     gen_path = inference.MODELS_DIR / "generate-v1.keras"
     if not gen_path.exists():
         pytest.skip("sin backend/models/generate-v1.keras")
     from app.ml.generate_model import GENERATE_CUSTOM_OBJECTS
-    import importlib.util
-    script_path = inference.MODELS_DIR.parent / "scripts" / "train_generate.py"
-    spec = importlib.util.spec_from_file_location("train_generate", script_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    # dataset val pequeño determinista
-    pals = mod.build_palette_list(40, seed=99)
-    (Xl, Xm, Xh), (Yp, Ys) = mod.palette_to_dataset(pals, seed=99)
-    model = tf.keras.models.load_model(str(gen_path), custom_objects=GENERATE_CUSTOM_OBJECTS)
-    pred_pal, _ = model.predict([Xl, Xm, Xh], verbose=0)
-    ciede = mod.mean_ciede2000_approx(Yp, pred_pal)
-    print(f"\n[G] CIEDE={ciede:.3f} (umbral <30, ref ~23.5)")
-    assert ciede < 30.0
+
+    cfg = THRESHOLDS["generate"]
+    (x_lab, x_mask, x_harm), (y_pal, _) = benchmarks.generate_eval_dataset(
+        n=cfg["n"], seed=cfg["seed"]
+    )
+    model = import_tf_model(gen_path, GENERATE_CUSTOM_OBJECTS)
+    pred_pal, _ = model.predict([x_lab, x_mask, x_harm], verbose=0)
+
+    true_lab = _denormalize_palette_batch(y_pal)
+    pred_lab = _denormalize_palette_batch(pred_pal)
+    # G genera los 5 slots alineados con ground truth: emparejamiento posicional.
+    ciede = float(np.mean(metrics.ciede2000(pred_lab, true_lab)))
+    mse = float(np.mean((np.asarray(y_pal, dtype=np.float64) - pred_pal) ** 2))
+    print(f"\n[G] CIEDE2000={ciede:.4f} CIE76={np.mean(metrics.delta_e76(pred_lab, true_lab)):.4f} MSE={mse:.6f}")
+    assert ciede <= cfg["ciede2000_mean_max"]
+    assert mse <= cfg["mse_max"]
 
 
-def test_c_accuracy_thresholds():
-    tf = pytest.importorskip("tensorflow")
-    cls_path = inference.MODELS_DIR / "classify-v1.keras"
-    if not cls_path.exists():
-        pytest.skip("sin backend/models/classify-v1.keras")
-    import importlib.util
-    script_path = inference.MODELS_DIR.parent / "scripts" / "train_classify.py"
-    spec = importlib.util.spec_from_file_location("train_classify", script_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    pals = mod.build_palette_list(120, seed=123)
-    X, y = mod.build_dataset(pals, seed=123)
-    model = tf.keras.models.load_model(str(cls_path))
-    loss, acc = model.evaluate(X, y, verbose=0)
-    print(f"\n[C] accuracy={acc:.4f} (umbral sintético 0.85, curado 0.70)")
-    # debe pasar el más exigente sintético
-    assert acc >= 0.85
-    assert acc >= 0.70
+def import_tf_model(path, custom_objects=None):
+    import tensorflow as tf
+
+    return tf.keras.models.load_model(str(path), custom_objects=custom_objects)
+
+
+def test_c_pipeline_test_metrics_within_thresholds():
+    pytest.importorskip("tensorflow")
+    cls_path = inference.active_keras_path("classify")
+    if cls_path is None:
+        pytest.skip("sin modelo C activo")
+    model = inference.load_keras_model("classify")
+    if model is None:
+        pytest.skip("modelo C activo no cargable")
+
+    cfg = THRESHOLDS["classify"]
+    x54, x40, y, _palettes, _stats = benchmarks.classify_eval_split(
+        n=cfg["n"], seed=cfg["splitSeed"]
+    )
+    input_dim = inference._classify_input_dim(model) or 54
+    x = x54 if input_dim == 54 else x40
+    probs = np.asarray(model.predict(x, verbose=0), dtype=np.float64)
+    true = np.argmax(y, axis=1)
+    pred = np.argmax(probs, axis=1)
+    labels = benchmarks.HARMONY_LABELS
+    report = metrics.per_class_report(true, pred, labels=labels, n_classes=4)
+    accuracy = float(np.mean(pred == true))
+    macro = metrics.macro_f1(true, pred, labels=labels, n_classes=4)
+    print(f"\n[C] pipeline test n={len(true)} dim={input_dim} accuracy={accuracy:.4f} macro-F1={macro:.4f}")
+    assert accuracy >= cfg["pipeline_accuracy_min"]
+    assert macro >= cfg["pipeline_macro_f1_min"]
+    for label in labels:
+        assert report[label]["recall"] >= cfg["pipeline_per_class_recall_min"]
 
 
 def test_no_broken_color_logic():

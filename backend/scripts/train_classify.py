@@ -1,20 +1,30 @@
-"""Entrena la red C clasificadora (Fase 4).
+"""Entrena la red C clasificadora (Fase 4 / issue #22).
 
-Entrada: 40 dims (10*Lab +10 pesos de E)
-Arquitectura: MLP 40→64→32 ReLU → softmax 4
+Modos:
+- `pipeline` (por defecto, `classify-v2`): paletas etiquetadas con
+  `app.ml.benchmarks.build_classify_palette_list`, convertidas a mosaico
+  sintético con pesos Dirichlet,
+  orden barajado, tamaño/JPEG variables; se extraen los colores con la red E
+  activa (`inference.extract_image_colors`, camino real de producción) y se
+  construyen las features de 54 dims (`palette_features`). Este modo es
+  pipeline-consistente: entrena con la misma representación que usa la
+  inferencia.
+- `synthetic` (legacy, `classify-v1`): 40 dims (10*Lab +10 pesos) generadas
+  directamente desde los HEX, sin pasar por E.
+
+Arquitectura: MLP input_dim→64→32 ReLU → softmax 4
 Loss: categorical_crossentropy + label smoothing 0.05
 Datos: training.db palettes con harmony_label + fallback sintético.
-Eval: accuracy ≥0.85 sintético / ≥0.70 curado.
 
 Uso (solo .venv-tf):
-    backend/.venv-tf/bin/python backend/scripts/train_classify.py --epochs 20
+    backend/.venv-tf/bin/python backend/scripts/train_classify.py
+    backend/.venv-tf/bin/python backend/scripts/train_classify.py --mode synthetic
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -24,139 +34,142 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.db.sqlite import get_connection
-from app.ml.color_spaces import ColorConverter
+from app.ml.benchmarks import (
+    DEFAULT_CACHE_DIR,
+    FEATURE_DIM_V1,
+    FEATURE_DIM_V2,
+    HARMONY_LABELS,
+    build_classify_palette_list as build_palette_list,
+    classify_split_palettes,
+    extract_pipeline_features,
+    palette_to_legacy_dataset as build_dataset,
+)
+from app.ml.metrics import (
+    confusion_matrix,
+    macro_f1,
+    nll,
+    per_class_report,
+)
+from app.services import model_registry
 
-MODEL_NAME = "classify-v1.keras"
-HARMONY_LABELS = ["complementario", "triada", "analogo", "monocromatica"]
-HARMONY_TO_IDX = {h: i for i, h in enumerate(HARMONY_LABELS)}
 
-
-def git_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=BACKEND_DIR.parent,
-            capture_output=True,
-            text=True,
-            timeout=15,
+def classification_metrics(model, X: np.ndarray, y: np.ndarray) -> dict:
+    """Métricas completas sin sklearn: acc, macro-F1, recall/clase, confusión."""
+    probs = np.asarray(model.predict(X, verbose=0), dtype=np.float64)
+    pred = np.argmax(probs, axis=1)
+    true = np.argmax(y, axis=1)
+    n = len(true)
+    cm = confusion_matrix(true, pred, n_classes=len(HARMONY_LABELS))
+    report = per_class_report(
+        true, pred, labels=HARMONY_LABELS, n_classes=len(HARMONY_LABELS)
+    )
+    return {
+        "accuracy": float(np.mean(pred == true)) if n else 0.0,
+        "macro_f1": macro_f1(
+            true, pred, labels=HARMONY_LABELS, n_classes=len(HARMONY_LABELS)
         )
-        return out.stdout.strip() or "unknown"
-    except Exception:
-        return "unknown"
-
-
-def load_db_palettes(limit: int) -> list[dict]:
-    try:
-        conn = get_connection()
-    except Exception:
-        return []
-    try:
-        rows = conn.execute(
-            "SELECT p.id, p.harmony_label, c.position, c.hex "
-            "FROM palettes p JOIN palette_colors c ON c.palette_id=p.id "
-            "WHERE p.harmony_label IN ('complementario','triada','analogo','monocromatica') "
-            "ORDER BY p.id, c.position"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
-    pal_map: dict[int, dict] = {}
-    for pid, harmony, pos, hexv in rows:
-        if pid not in pal_map:
-            pal_map[pid] = {"hexes": [], "harmony_label": harmony}
-        pal_map[pid]["hexes"].append(hexv)
-    # filter only complete 5-color palettes
-    result = [v for v in pal_map.values() if len(v["hexes"]) == 5 and v["harmony_label"] in HARMONY_TO_IDX][:limit]
-    return result
-
-
-def synthetic_palette(rng: np.random.RandomState, sigma: float = 2.5) -> dict:
-    from app.schemas.palette import HarmonyType
-    from app.services.classic import ClassicPaletteGenerator
-
-    LABEL_TO_HARMONY = {
-        "complementario": HarmonyType.COMPLEMENTARY,
-        "triada": HarmonyType.TRIADIC,
-        "analogo": HarmonyType.ANALOGOUS,
-        "monocromatica": HarmonyType.MONOCHROMATIC,
+        if n
+        else 0.0,
+        "recall_per_class": {
+            label: float(report[label]["recall"]) for label in HARMONY_LABELS
+        },
+        "confusion": cm.tolist(),
+        "nll": nll(probs, true) if n else 0.0,
+        "n": int(n),
     }
-    gen = ClassicPaletteGenerator()
-    base_hex = "#%02X%02X%02X" % tuple(int(v) for v in rng.randint(0, 256, size=3))
-    label = HARMONY_LABELS[int(rng.randint(0, len(HARMONY_LABELS)))]
-    resp = gen.generate_palette([base_hex], LABEL_TO_HARMONY[label])
-    hexes = [c.value.upper() for c in resp.colors]
-    while len(hexes) < 5:
-        idx = int(rng.randint(0, len(hexes)))
-        lab = np.array(ColorConverter.hex_to_lab(hexes[idx]), dtype=np.float64)
-        lab += rng.normal(0.0, sigma, size=3)
-        lab[0] = float(np.clip(lab[0], 0.0, 100.0))
-        hexes.append(ColorConverter.lab_to_hex((lab[0], lab[1], lab[2])).upper())
-    return {"hexes": hexes[:5], "harmony_label": label}
 
 
-def build_palette_list(n: int, seed: int) -> list[dict]:
-    pals = load_db_palettes(n)
-    rng = np.random.RandomState(seed + 777_000)
-    while len(pals) < n:
-        pals.append(synthetic_palette(rng))
-    # balance classes via oversampling if needed: ensure each class present
-    # just shuffle
-    rng.shuffle(pals)
-    return pals[:n]
+def train_pipeline(
+    epochs: int = 60,
+    n_train: int = 600,
+    n_val: int = 120,
+    n_test: int = 80,
+    batch: int = 32,
+    lr: float = 1e-3,
+    seed: int = 42,
+    cache_dir: Path | None = DEFAULT_CACHE_DIR,
+):
+    import tensorflow as tf
 
+    from app.ml.classify_model import build_classify_model
 
-def palette_to_features(hexes: list[str], rng: np.random.RandomState | None = None) -> np.ndarray:
-    """Convierte paleta 5 colores a vector 40 dims (10 Lab +10 pesos) simulando salida E.
+    splits = classify_split_palettes(
+        n_train=n_train, n_val=n_val, n_test=n_test, seed=seed
+    )
+    pals_tr, pals_va, pals_te = splits["train"], splits["val"], splits["test"]
+    X_tr, _, y_tr, stats_tr = extract_pipeline_features(
+        pals_tr, seed, split="train", cache_dir=cache_dir
+    )
+    X_va, _, y_va, stats_va = extract_pipeline_features(
+        pals_va, seed + 10_000, split="val", cache_dir=cache_dir
+    )
+    X_te, _, y_te, stats_te = extract_pipeline_features(
+        pals_te, seed + 20_000, split="test", cache_dir=cache_dir
+    )
 
-    Usa pesos descendentes fijos (0.30..0.10 + 0.02) con pequeño ruido,
-    preservando el orden original (estable) para que la señal de armonía
-    sea aprendible. Con Dirichlet aleatorio la accuracy caía a ~0.38.
-    """
-    labs5 = [ColorConverter.lab_normalize(ColorConverter.hex_to_lab(h)) for h in hexes]
-    labs10 = []
-    for i in range(10):
-        if i < 5:
-            labs10.append(labs5[i])
-        else:
-            base = np.array(labs5[-1], dtype=np.float64)
-            if rng is not None:
-                base = base + rng.normal(0.0, 0.02, size=3)
-                base[0] = float(np.clip(base[0], 0.0, 1.0))
-                base[1] = float(np.clip(base[1], -1.0, 1.0))
-                base[2] = float(np.clip(base[2], -1.0, 1.0))
-            labs10.append(tuple(base))
-    labs10_arr = np.array(labs10, dtype=np.float32)  # (10,3)
+    print(
+        f"[train_classify] TF {tf.__version__} modo=pipeline dim={FEATURE_DIM_V2} "
+        f"n_train={n_train} n_val={n_val} n_test={n_test} "
+        f"fallbacks(E)={stats_tr['fallback_extractions']}/"
+        f"{stats_va['fallback_extractions']}/{stats_te['fallback_extractions']}",
+        flush=True,
+    )
 
-    # pesos: descendentes fijos + ruido leve (preserva orden)
-    w10 = np.array([0.30, 0.25, 0.20, 0.15, 0.10, 0.02, 0.02, 0.02, 0.02, 0.02], dtype=np.float64)
-    if rng is not None:
-        w10[:5] += rng.normal(0.0, 0.008, size=5)
-        w10[5:] += rng.normal(0.0, 0.002, size=5)
-        w10 = np.clip(w10, 0.01, 0.5)
-    w10 = w10 / w10.sum()
-    # orden descendente: con estos pesos el orden suele ser 0..9 original
-    # usamos argsort estable pero con pesos casi ordenados conserva señal
-    order = np.argsort(-w10, kind="stable")
-    labs10_arr = labs10_arr[order]
-    w10 = w10[order]
+    model = build_classify_model(input_dim=FEATURE_DIM_V2)
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05),
+        metrics=["accuracy"],
+    )
+    early = tf.keras.callbacks.EarlyStopping(
+        monitor="val_accuracy",
+        patience=8,
+        mode="max",
+        restore_best_weights=True,
+        verbose=1,
+    )
+    history = model.fit(
+        X_tr,
+        y_tr,
+        validation_data=(X_va, y_va),
+        epochs=epochs,
+        batch_size=batch,
+        verbose=2,
+        callbacks=[early],
+    )
+    epochs_run = len(history.history.get("loss", []))
 
-    flat_lab = labs10_arr.reshape(-1)  # 30
-    feat = np.concatenate([flat_lab, w10.astype(np.float32)])  # 40
-    return feat.astype(np.float32)
-
-
-def build_dataset(palettes: list[dict], seed: int):
-    rng = np.random.RandomState(seed)
-    N = len(palettes)
-    X = np.zeros((N, 40), dtype=np.float32)
-    y = np.zeros((N, 4), dtype=np.float32)
-    for i, pal in enumerate(palettes):
-        feat = palette_to_features(pal["hexes"], rng)
-        X[i] = feat
-        idx = HARMONY_TO_IDX[pal["harmony_label"]]
-        y[i, idx] = 1.0
-    return X, y
+    train_metrics = classification_metrics(model, X_tr, y_tr)
+    val_metrics = classification_metrics(model, X_va, y_va)
+    test_metrics = classification_metrics(model, X_te, y_te)
+    print(
+        f"[train_classify] train acc={train_metrics['accuracy']:.4f} "
+        f"val acc={val_metrics['accuracy']:.4f} "
+        f"test acc={test_metrics['accuracy']:.4f} "
+        f"epochs={epochs_run}",
+        flush=True,
+    )
+    metrics = {
+        "val_accuracy": val_metrics["accuracy"],
+        "val_loss": float(
+            np.min(history.history["val_loss"]) if history.history.get("val_loss") else 0.0
+        ),
+        "train_accuracy": train_metrics["accuracy"],
+        "test_accuracy": test_metrics["accuracy"],
+        "test_macro_f1": test_metrics["macro_f1"],
+        "test_recall_per_class": test_metrics["recall_per_class"],
+        "test_confusion": test_metrics["confusion"],
+        "test_nll": test_metrics["nll"],
+        "epochs_run": epochs_run,
+        "feature_dim": FEATURE_DIM_V2,
+        "pipeline_consistent": True,
+        "fallback_extractions": {
+            "train": stats_tr["fallback_extractions"],
+            "val": stats_va["fallback_extractions"],
+            "test": stats_te["fallback_extractions"],
+        },
+    }
+    return model, metrics
 
 
 def train_and_evaluate(epochs=20, n_train=800, n_val=120, batch=32, lr=1e-3, seed=42):
@@ -170,7 +183,7 @@ def train_and_evaluate(epochs=20, n_train=800, n_val=120, batch=32, lr=1e-3, see
 
     print(f"[train_classify] TF {tf.__version__} n_train={n_train} n_val={n_val}", flush=True)
 
-    model = build_classify_model()
+    model = build_classify_model(input_dim=FEATURE_DIM_V1)
     opt = tf.keras.optimizers.Adam(learning_rate=lr)
     model.compile(
         optimizer=opt,
@@ -196,65 +209,184 @@ def train_and_evaluate(epochs=20, n_train=800, n_val=120, batch=32, lr=1e-3, see
     return model, {"val_accuracy": float(acc), "val_loss": float(loss), "history": history.history}
 
 
-def save_and_register(model, out_path: Path, params: dict, metrics: dict) -> dict:
-    model.save(str(out_path))
+def save_and_register(
+    model, out_path: Path, params: dict, metrics: dict, *, force: bool = False
+) -> dict:
+    tmp_path = out_path.with_name(f".tmp-{out_path.name}")
+    model.save(str(tmp_path))
     import tensorflow as tf
 
-    reloaded = tf.keras.models.load_model(str(out_path))
-    assert reloaded.output_shape[-1] == 4
-
-    manifest_path = BACKEND_DIR / "models" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
-    slot = manifest.setdefault("classify", {"active": None, "versions": []})
-    if MODEL_NAME not in slot.get("versions", []):
-        slot.setdefault("versions", []).append(MODEL_NAME)
-    slot["active"] = MODEL_NAME
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-    conn = get_connection()
     try:
-        conn.execute(
-            "INSERT INTO training_runs(model, git_sha, params_json, metrics_json, keras_path) VALUES(?, ?, ?, ?, ?)",
-            (
+        reloaded = tf.keras.models.load_model(str(tmp_path))
+        assert reloaded.output_shape[-1] == 4
+
+        tf_version, keras_version = model_registry.framework_versions()
+        conn = get_connection()
+        try:
+            cur = conn.execute(
+                "INSERT INTO training_runs(model, git_sha, params_json, metrics_json,"
+                " keras_path, tf_version, keras_version, calibration_json)"
+                " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "classify",
+                    model_registry.git_sha(),
+                    json.dumps(params, sort_keys=True),
+                    json.dumps(metrics, sort_keys=True),
+                    f"backend/models/{out_path.name}",
+                    tf_version,
+                    keras_version,
+                    None,
+                ),
+            )
+            conn.commit()
+            run_id = int(cur.lastrowid or 0)
+        finally:
+            conn.close()
+
+        try:
+            registered = model_registry.register_version(
                 "classify",
-                git_sha(),
-                json.dumps(params, sort_keys=True),
-                json.dumps(metrics, sort_keys=True),
-                f"backend/models/{MODEL_NAME}",
-            ),
-        )
-        conn.commit()
-        run_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+                tmp_path,
+                metrics=metrics,
+                params=params,
+                training_run_id=run_id,
+                force=force,
+                filename=out_path.name,
+            )
+        except Exception:
+            conn = get_connection()
+            try:
+                conn.execute("DELETE FROM training_runs WHERE id = ?", (run_id,))
+                conn.commit()
+            finally:
+                conn.close()
+            raise
     finally:
-        conn.close()
-    return {"keras_path": str(out_path), "training_run_id": run_id}
+        if tmp_path.exists():
+            tmp_path.unlink()
+    return {
+        "keras_path": registered["keras_path"],
+        "filename": registered["filename"],
+        "training_run_id": run_id,
+    }
 
 
 def main(argv: list[str] | None = None) -> dict:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--n-train", type=int, default=800)
-    parser.add_argument("--n-val", type=int, default=120)
+    parser.add_argument("--mode", choices=("pipeline", "synthetic"), default="pipeline")
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--n-train", type=int, default=None)
+    parser.add_argument("--n-val", type=int, default=None)
+    parser.add_argument("--n-test", type=int, default=None)
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out", type=str, default=str(BACKEND_DIR / "models" / MODEL_NAME))
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--version", type=str, default=None,
+                        help="Versión nueva: entero o vN (ej. 3 o v3 -> classify-v3.keras)")
+    parser.add_argument("--out", type=str, default=None,
+                        help="Ruta alternativa (prevalece sobre --version); se registra su nombre real")
+    parser.add_argument("--cache-dir", type=str, default=str(DEFAULT_CACHE_DIR))
+    parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument("--force", action="store_true",
+                        help="Sobrescribe la versión destino y registra aunque acc<threshold")
     args = parser.parse_args(argv)
 
-    model, eval_metrics = train_and_evaluate(
-        epochs=args.epochs, n_train=args.n_train, n_val=args.n_val, batch=args.batch, lr=args.lr, seed=args.seed
+    out_path = model_registry.target_path(
+        "classify", version=args.version, out=args.out
     )
-    params = {"epochs": args.epochs, "n_train": args.n_train, "n_val": args.n_val, "batch": args.batch, "lr": args.lr, "seed": args.seed}
-    metrics = {"val_accuracy": eval_metrics["val_accuracy"], "val_loss": eval_metrics["val_loss"]}
-    ok = metrics["val_accuracy"] >= 0.70  # ≥0.85 sintético / ≥0.70 curado ; we check 0.70 min
-    # if synthetic, expect >=0.8
+    if out_path.exists() and not args.force:
+        raise SystemExit(
+            f"[train_classify] ERROR: {out_path} ya existe; usa --version N libre "
+            "o --force para sobrescribir (nunca se pisa una versión por accidente)"
+        )
+
+    if args.mode == "pipeline":
+        epochs = args.epochs if args.epochs is not None else 60
+        n_train = args.n_train if args.n_train is not None else 600
+        n_val = args.n_val if args.n_val is not None else 120
+        n_test = args.n_test if args.n_test is not None else 80
+        cache_dir = None if args.no_cache else Path(args.cache_dir)
+        model, eval_metrics = train_pipeline(
+            epochs=epochs,
+            n_train=n_train,
+            n_val=n_val,
+            n_test=n_test,
+            batch=args.batch,
+            lr=args.lr,
+            seed=args.seed,
+            cache_dir=cache_dir,
+        )
+        params = {
+            "mode": "pipeline",
+            "feature_dim": FEATURE_DIM_V2,
+            "epochs": epochs,
+            "n_train": n_train,
+            "n_val": n_val,
+            "n_test": n_test,
+            "batch": args.batch,
+            "lr": args.lr,
+            "seed": args.seed,
+            "label_smoothing": 0.05,
+            "early_stopping_patience": 8,
+            "mosaic": {
+                "size": [96, 160],
+                "jpeg_quality": [60, 95],
+                "min_weight": 0.08,
+                "shuffle_order": True,
+            },
+            "extractor": model_registry.active_version("extract") or "extract-v1.keras",
+        }
+        metrics = dict(eval_metrics)
+        threshold = 0.70
+    else:
+        epochs = args.epochs if args.epochs is not None else 20
+        n_train = args.n_train if args.n_train is not None else 800
+        n_val = args.n_val if args.n_val is not None else 120
+        model, eval_metrics = train_and_evaluate(
+            epochs=epochs,
+            n_train=n_train,
+            n_val=n_val,
+            batch=args.batch,
+            lr=args.lr,
+            seed=args.seed,
+        )
+        params = {
+            "mode": "synthetic",
+            "feature_dim": FEATURE_DIM_V1,
+            "epochs": epochs,
+            "n_train": n_train,
+            "n_val": n_val,
+            "batch": args.batch,
+            "lr": args.lr,
+            "seed": args.seed,
+        }
+        metrics = {
+            "val_accuracy": eval_metrics["val_accuracy"],
+            "val_loss": eval_metrics["val_loss"],
+        }
+        threshold = 0.70
+
+    ok = metrics["val_accuracy"] >= threshold
     saved = None
     if ok or args.force:
-        saved = save_and_register(model, Path(args.out), params, metrics)
-        print(f"[train_classify] guardado {saved['keras_path']} run={saved['training_run_id']} acc={metrics['val_accuracy']:.4f}", flush=True)
+        saved = save_and_register(
+            model, out_path, params, metrics, force=args.force
+        )
+        print(
+            f"[train_classify] guardado {saved['keras_path']} "
+            f"run={saved['training_run_id']} acc={metrics['val_accuracy']:.4f}",
+            flush=True,
+        )
     else:
-        print(f"[train_classify] acc {metrics['val_accuracy']:.4f} <0.70 sin --force no registra", flush=True)
+        print(
+            f"[train_classify] acc {metrics['val_accuracy']:.4f} <{threshold} "
+            "sin --force no registra",
+            flush=True,
+        )
     result = {"params": params, "metrics": metrics, "ok": ok, "saved": saved}
     print("[train_classify] " + json.dumps(result, sort_keys=True))
     if not ok and not args.force:

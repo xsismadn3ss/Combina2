@@ -237,3 +237,46 @@ def test_feedback_persists_row(training_db):
     row = conn.execute("SELECT accepted, score FROM feedback").fetchone()
     conn.close()
     assert tuple(row) == (1, 0.9)
+
+
+@pytest.mark.parametrize(
+    "palette",
+    [
+        pytest.param(
+            {
+                "type": HarmonyType.TRIADIC.value,
+                "colors": [{"value": "#2A9D8F", "role": "primary"}],
+                "fallback": None,
+            },
+            id="fallback-null",
+        ),
+        pytest.param(
+            {
+                "type": HarmonyType.TRIADIC.value,
+                "colors": [{"value": "#2A9D8F", "role": "primary"}],
+            },
+            id="fallback-ausente",
+        ),
+    ],
+)
+def test_feedback_accepts_null_or_missing_palette_fallback(training_db, palette):
+    response = client.post(
+        f"{APICOnfig.prefix}/feedback",
+        json={"palette": palette, "accepted": True, "score": 0.9},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+
+
+def test_feedback_requires_accepted(training_db):
+    response = client.post(
+        f"{APICOnfig.prefix}/feedback",
+        json={
+            "palette": {
+                "type": HarmonyType.TRIADIC.value,
+                "colors": [{"value": "#2A9D8F", "role": "primary"}],
+                "fallback": None,
+            }
+        },
+    )
+    assert response.status_code == 422

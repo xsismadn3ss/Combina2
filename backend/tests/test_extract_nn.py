@@ -4,8 +4,10 @@
 # `.keras` si existe y si no hace `pytest.skip`. Nada en este módulo importa
 # tensorflow/sklearn a nivel superior.
 import io
+import json
 import re
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,8 +17,8 @@ from PIL import Image
 import app.services.inference as inference
 from app.config import APICOnfig
 from app.main import app
+from app.ml import benchmarks
 from app.ml.color_spaces import ColorConverter
-from app.ml.datasets import synthesize_mosaic
 from app.ml.losses import (
     distillation_loss_numpy,
     mean_delta_e,
@@ -26,19 +28,9 @@ from app.ml.losses import (
 client = TestClient(app)
 HEX_RE = re.compile(r"^#[0-9A-F]{6}$")
 
-# Set fijo de paridad (paletas diversas, deterministas).
-PARITY_PALETTES = [
-    ["#FF0000", "#00FF00", "#0000FF"],
-    ["#FFFFFF", "#000000"],
-    ["#123456", "#ABCDEF", "#FEDCBA", "#445566"],
-    ["#FF8800", "#0088FF", "#88FF00", "#FF0088", "#00FF88"],
-    ["#5A3D2B", "#9C8E82", "#2B3A5A", "#7A9C5A"],
-    ["#F5F5DC", "#8B4513", "#2F4F4F"],
-    ["#E63946", "#F1FA8C", "#1D3557", "#A8DADC", "#457B9D"],
-    ["#111111", "#888888", "#EEEEEE"],
-    ["#7B2D26", "#F0E6EF", "#0A3200", "#E0A458"],
-    ["#003049", "#D62828", "#F77F00", "#FCBF49", "#EAE2B7"],
-]
+THRESHOLDS = json.loads(
+    (Path(__file__).resolve().parents[1] / "eval" / "thresholds.json").read_text()
+)
 
 
 def _png_bytes(hexes: list[str], size: int = 90) -> bytes:
@@ -198,25 +190,30 @@ def test_model_failure_falls_back(monkeypatch):
 
 
 def test_parity_delta_e_vs_kmeans():
-    tf = pytest.importorskip("tensorflow")
+    pytest.importorskip("tensorflow")
     keras_path = inference.MODELS_DIR / "extract-v1.keras"
     if not keras_path.exists():
         pytest.skip("sin backend/models/extract-v1.keras entrenado")
-    from app.ml.extract_model import EXTRACT_CUSTOM_OBJECTS
     from app.services.classic import ClassicPaletteIdentifier
 
-    model = tf.keras.models.load_model(str(keras_path), custom_objects=EXTRACT_CUSTOM_OBJECTS)
     classic = ClassicPaletteIdentifier()
+    cases = benchmarks.extract_eval_cases(
+        size=benchmarks.EXTRACT_EVAL_SIZE,
+        jpeg_quality=benchmarks.EXTRACT_EVAL_JPEG_QUALITY,
+        seed0=benchmarks.EXTRACT_EVAL_SEED0,
+    )
     deltas = []
-    for i, hexes in enumerate(PARITY_PALETTES):
-        blob = synthesize_mosaic(hexes, size=64, seed=5000 + i, jpeg_quality=80)
+    for case in cases:
         ref_lab = np.array(
-            [ColorConverter.hex_to_lab(c.value) for c in classic.identify_palette(blob)]
+            [ColorConverter.hex_to_lab(c.value) for c in classic.identify_palette(case["image"])]
         )
-        got = inference._extract_with_model(model, blob)
-        assert got is not None
-        got_lab = np.array([ColorConverter.hex_to_lab(c.value) for c in got])
+        result = inference.extract_image_colors(case["image"])
+        assert not result.fallback
+        got_lab = np.array([ColorConverter.hex_to_lab(c.value) for c in result.colors])
         deltas.append(mean_delta_e(got_lab, ref_lab))
     mean_de = float(np.mean(deltas))
-    print(f"\n[parity] ΔE medio={mean_de:.3f} deltas={[round(d, 2) for d in deltas]}")
-    assert mean_de < 5.0
+    max_de = float(np.max(deltas))
+    print(f"\n[parity] ΔE medio={mean_de:.3f} max={max_de:.3f}")
+    cfg = THRESHOLDS["extract"]
+    assert mean_de <= cfg["delta_e76_mean_max"]
+    assert max_de <= cfg["delta_e76_max_max"]

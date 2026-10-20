@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS training_runs(
   git_sha TEXT, params_json TEXT,
   metrics_json TEXT,
   keras_path TEXT NOT NULL,
+  tf_version TEXT,
+  keras_version TEXT,
+  calibration_json TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS feedback(
@@ -69,12 +72,28 @@ CREATE TABLE IF NOT EXISTS feedback(
 """
 
 
+def _migrate_training_runs(conn: sqlite3.Connection) -> None:
+    """Añade columnas B3 a bases existentes (idempotente, no destruye datos)."""
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(training_runs)").fetchall()
+    }
+    for name, decl in (
+        ("tf_version", "TEXT"),
+        ("keras_version", "TEXT"),
+        ("calibration_json", "TEXT"),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE training_runs ADD COLUMN {name} {decl}")
+    conn.commit()
+
+
 def get_connection(path: Path | None = None) -> sqlite3.Connection:
     db_path = path or get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.executescript(DDL)
+    _migrate_training_runs(conn)
     return conn
 
 

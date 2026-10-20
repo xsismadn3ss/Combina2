@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Palette, Loader2, Wand2 } from "lucide-react";
 import { UploadImage } from "@/components/UploadImage";
@@ -20,8 +20,8 @@ type FlowState = "idle" | "uploading" | "selecting" | "generating" | "done" | "e
 export default function GenerarPage() {
   const { topK, setTopK } = useTopK();
   const [flow, setFlow] = useState<FlowState>("idle");
-  const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const [extract, setExtract] = useState<ExtractResponse | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [harmony, setHarmony] = useState<HarmonyType | "">("");
@@ -35,27 +35,34 @@ export default function GenerarPage() {
       .catch(() => setHarmonies(["complementario", "triada", "analogo", "monocromatica"]));
   }, []);
 
-  // preview URL lifecycle
-  useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
+  // preview URL lifecycle: se crea/revoca en los handlers, nunca con setState
+  // síncrono dentro de un effect.
+  const updatePreview = useCallback((next: File | null) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const url = next ? URL.createObjectURL(next) : null;
+    previewUrlRef.current = url;
     setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const reset = useCallback(() => {
     setFlow("idle");
-    setFile(null);
+    updatePreview(null);
     setExtract(null);
     setSelected([]);
     setResult(null);
-  }, []);
+  }, [updatePreview]);
 
   const handleFileSelected = async (f: File) => {
-    setFile(f);
+    updatePreview(f);
     setSelected([]);
     setResult(null);
     setFlow("uploading");
@@ -90,7 +97,7 @@ export default function GenerarPage() {
       setResult(res);
       setFlow("done");
       toast.success(`Generadas ${res.palettes.length} paletas`);
-    } catch (e) {
+    } catch {
       toast.error("No pudimos crear las paletas. Inténtalo de nuevo.");
       setFlow("error");
     }

@@ -24,7 +24,7 @@ export function PaletteCarousel({ palettes, fallback }: Props) {
       });
       setFeedbackDone((prev) => ({ ...prev, [index]: true }));
       toast.success(accepted ? "¡Gracias! Feedback positivo enviado" : "Feedback negativo enviado");
-    } catch (e) {
+    } catch {
       toast.error("No pudimos guardar tu opinión. Inténtalo de nuevo.");
     }
   };
