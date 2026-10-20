@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Settings } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -7,10 +7,17 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { useTopK } from "@/hooks/useTopK";
 
+const emptySubscribe = () => () => {};
+
 export default function ConfigPage() {
   const { topK, setTopK } = useTopK();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // true solo tras la hidratación: evita el mismatch con localStorage sin
+  // setState dentro de un effect.
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

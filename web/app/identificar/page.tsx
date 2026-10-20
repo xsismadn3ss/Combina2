@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, ScanSearch } from "lucide-react";
 import { UploadImage } from "@/components/UploadImage";
@@ -16,18 +16,28 @@ export default function IdentificarPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<IdentifyResponse | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+
+  // Crea/revoca el object URL en los handlers (no en un effect) y lo limpia al
+  // desmontar el componente.
+  const updatePreview = (next: File | null) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const url = next ? URL.createObjectURL(next) : null;
+    previewUrlRef.current = url;
+    setPreviewUrl(url);
+  };
 
   useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const handleFileSelected = async (f: File) => {
+    updatePreview(f);
     setFile(f);
     setResult(null);
     setFlow("uploading");
@@ -43,6 +53,7 @@ export default function IdentificarPage() {
   };
 
   const handleClear = () => {
+    updatePreview(null);
     setFile(null);
     setResult(null);
     setFlow("idle");
