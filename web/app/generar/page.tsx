@@ -17,6 +17,8 @@ import { useTopK } from "@/hooks/useTopK";
 
 type FlowState = "idle" | "uploading" | "selecting" | "generating" | "done" | "error";
 
+const MAX_SELECTED_COLORS = 5;
+
 export default function GenerarPage() {
   const { topK, setTopK } = useTopK();
   const [flow, setFlow] = useState<FlowState>("idle");
@@ -78,6 +80,10 @@ export default function GenerarPage() {
   };
 
   const toggle = (hex: string) => {
+    if (!selected.includes(hex) && selected.length >= MAX_SELECTED_COLORS) {
+      toast.error(`Puedes seleccionar hasta ${MAX_SELECTED_COLORS} colores`);
+      return;
+    }
     setSelected((prev) => (prev.includes(hex) ? prev.filter((h) => h !== hex) : [...prev, hex]));
   };
 
@@ -131,14 +137,19 @@ export default function GenerarPage() {
           </CardHeader>
           <CardContent className="grid grid-cols-5 gap-3">
             {Array.from({ length: 10 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-xl" />
+              <Skeleton key={i} className="h-14 w-full rounded-lg sm:h-20" />
             ))}
           </CardContent>
         </Card>
       )}
 
       {extract && (flow === "selecting" || flow === "generating" || flow === "done" || flow === "error") && (
-        <Top10Grid colors={extract.colors} selected={selected} onToggle={toggle} />
+        <Top10Grid
+          colors={extract.colors}
+          selected={selected}
+          onToggle={toggle}
+          maxSelected={MAX_SELECTED_COLORS}
+        />
       )}
 
       {(flow === "selecting" || flow === "generating" || flow === "done" || flow === "error") && extract && (

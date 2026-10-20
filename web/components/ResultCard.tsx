@@ -2,6 +2,7 @@
 import type { IdentifyResponse } from "@/lib/api/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ColorSwatch } from "@/components/ColorSwatch";
 
 type Props = {
   result: IdentifyResponse;
@@ -33,15 +34,17 @@ export function ResultCard({ result }: Props) {
         ) : null}
         <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
           {result.colors.map((c) => (
-            <div
+            <ColorSwatch
               key={c.value}
-              className="flex flex-col overflow-hidden rounded-lg border"
-              title="Color de la combinación"
-            >
-              <div className="h-12 w-full" style={{ backgroundColor: c.value }} />
-            </div>
+              value={c.value}
+              copyable
+              swatchClassName="h-10 sm:h-12"
+            />
           ))}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Toca un color para copiar su código HEX.
+        </p>
       </CardContent>
     </Card>
   );
