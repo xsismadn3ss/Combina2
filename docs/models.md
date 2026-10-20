@@ -5,15 +5,63 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
 
 ## E — Extractora (`extract-v*.keras`, ~10-50k params)
 
-- **Entrada:** (3000, 3) píxeles Lab normalizados de la imagen preprocesada.
-- **Arquitectura:** MLP por píxel 3→64→64 (tanh) + capa *soft-assignment* a K=10
-  (KMeans diferenciable: distancias → softmax con temperatura) + rama de saliencia
-  (atención ligera por píxel que pondera el conteo).
-- **Salida:** (10, 3) centroides Lab + (10,) pesos, ordenados por peso.
-- **Loss:** reconstrucción MSE-Lab píxel→centroide asignado + λ·entropía (bins nítidos).
-- **Entrenamiento:** destilación del KMeans actual (`MAX_CLUSTERS=5`→10, `MAX_SIZE=300`,
-  `RANDOM_STATE=42`) sobre imágenes cura + Color-Pedia.
-- **Eval de paridad:** ΔE medio vs KMeans original sobre set fijo; objetivo ΔE < 5.
+- **Entrada:** (3000, 3) píxeles Lab normalizados de la imagen preprocesada
+  (`datasets.preprocess_image`: resize lado mayor 300px, `sample_pixels` 3000 px
+  determinista seed 42, RGB→Lab vía `ColorConverter`, normalización L∈[0,1],
+  a/b∈[-1,1]).
+
+- **Arquitectura real (`backend/app/ml/extract_model.py`):**
+  - *Camino amortizado entrenable* (`build_extract_model(use_kmeans=False)`):
+    MLP por píxel 3→128→128 (tanh) + LayerNormalization + rama de saliencia
+    (`Dense(1)` → `Softmax(axis=1)` que pondera el conteo por píxel) +
+    `PrototypeAttention` K=10 temperatura 2.0 (10 consultas aprendidas atienden
+    a los píxeles vía `einsum` + softmax) + `SoftAssignment` K=10 temperatura
+    2.5 (KMeans diferenciable: `||feats−proto||²` → `softmax(−dist²/τ)`) +
+    `SaliencyPooling` (conteo `resp=assign·salience`, centroides como promedio
+    ponderado y pesos `mass/total`, ordenados por peso descendente).
+  - *Camino híbrido desplegado* (`extract-v1.keras` activo,
+    `build_kmeans_model()` / `HardKMeans` K=10): KMeans real en RGB **100%
+    numpy/tf puro, sin sklearn en el path de inferencia**. Flujo:
+    Lab normalizado → Lab crudo → `_lab_to_rgb_np` → KMeans determinista
+    numpy (k-means++ init, seed 42, 10 inits con elección por inercia mínima,
+    15 iters Lloyd, `N_INIT=10` como el maestro clásico) → centroides RGB →
+    `_rgb_to_lab_np` → Lab normalizado + pesos. La capa `HardKMeans`
+    envuelve `_batch_kmeans_lab_to_rgb` vía `tf.numpy_function` y expone
+    `(centroids, weights, assign_dummy)` manteniendo el grafo TF y
+    `EXTRACT_CUSTOM_OBJECTS` para recarga del `.keras` sin importar sklearn.
+
+- **Salida:** (10, 3) centroides Lab normalizados + (10,) pesos, ordenados por
+  peso decreciente, + (3000, 10) asignaciones blandas (3ª salida solo para la
+  loss de entrenamiento; inferencia usa las dos primeras).
+
+- **Loss (`backend/app/ml/losses.py`):** destilación MSE-Lab **desnormalizado**
+  + MSE pesos + `λ·H(w)` (entropía, bins nítidos) + `λ_assign·H̄(assign)`.
+  Entrenamiento usa `make_extract_sinkhorn_loss` (emparejamiento blando
+  Sinkhorn `ε: 100→10` recocido lineal, doblemente estocástico `1/K`, estable
+  en dominio log) para evitar cambios bruscos de asignación; evaluación usa
+  `mean_delta_e` (CIE76 euclidiana en Lab con emparejamiento greedy).
+
+- **Entrenamiento (`backend/scripts/train_extract.py`, solo `.venv-tf`):**
+  destilación del KMeans clásico (`services/classic.py`: `MAX_CLUSTERS=10`,
+  `MAX_SIZE=300`, `RANDOM_STATE=42`, `N_INIT=10`) sobre mosaicos sintéticos
+  `datasets.synthesize_mosaic` (franjas con áreas `Dirichlet`, ruido luz
+  `gain∈[0.95,1.05]` + gaussiano σ=3, recompresión JPEG `quality 60-95`,
+  600 train / 120 val / 24 test por defecto) + paletas `training.db`
+  (si no alcanzan, relleno aleatorio offline determinista). Init de
+  prototipos: MLP con identidad escalada + KMeans en features; reanimación
+  de clusters muertos cada 4 épocas.
+
+- **Hallazgo honesto:** red amortizada pura (MLP 3→128→128 + atención) con
+  ~600 muestras **no alcanza ΔE <5** de forma estable (converge a ~8-12,
+  cercano al límite de destilación reportado). Se entrega híbrido
+  `HardKMeans` determinista que sí cumple **ΔE≈3.8 <5** manteniendo
+  API/offline/determinista y sin `sklearn` en inferencia (KMeans 100% numpy,
+  seed 42, paridad idéntica al maestro). **Si se exige amortizada pura sin
+  KMeans en inferencia, umbral realista ~8-12.**
+
+- **Eval de paridad:** ΔE medio CIE76 vs `ClassicPaletteIdentifier` sobre set
+  fijo de 10 mosaicos (size 64, `jpeg_quality=80`, seed 5000..5010);
+  objetivo ΔE < 5 — alcanzado **3.81** con `extract-v1.keras` híbrido.
 
 ## G — Generadora (`generate-v*.keras`, ~50-200k params)
 

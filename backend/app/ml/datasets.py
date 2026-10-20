@@ -237,6 +237,75 @@ def count_palettes_by_source(conn: sqlite3.Connection) -> dict[str, int]:
     }
 
 
+# --- Mosaicos sintéticos para la red E (Fase 3) ---------------------------------
+
+MOSAIC_DEFAULT_SIZE = 128
+
+
+def synthesize_mosaic(
+    hexes: list[str],
+    weights: list[float] | None = None,
+    *,
+    size: int = MOSAIC_DEFAULT_SIZE,
+    seed: int = 0,
+    jpeg_quality: int = 85,
+    noise_sigma: float = 3.0,
+    light_range: tuple[float, float] = (0.95, 1.05),
+) -> bytes:
+    """Mosaico sintético 100% offline para entrenar/evaluar la red E.
+
+    Bloques (franjas verticales u horizontales) con áreas proporcionales a
+    `weights` (por defecto uniforme), más ruido de luz (ganancia global y
+    gaussiano por píxel) y recompresión JPEG. Determinista con `seed`.
+    Devuelve bytes JPEG listos para `preprocess_image` o el KMeans clásico.
+    """
+    if not hexes:
+        raise ValueError("Se necesita al menos un color")
+    norm = [normalize_hex(h) for h in hexes]
+    rng = np.random.RandomState(seed)
+    if weights is None:
+        weights = [1.0 / len(norm)] * len(norm)
+    w = np.asarray(weights, dtype=np.float64)
+    if len(w) != len(norm) or not np.all(w > 0):
+        raise ValueError("weights debe alinear con hexes y ser > 0")
+    w = w / w.sum()
+
+    rgb_cols = np.array(
+        [ColorConverter.hex_to_rgb(h) for h in norm], dtype=np.float64
+    )
+    # Anchos de franja proporcionales a los pesos (suma exacta = size).
+    widths = np.maximum(1, np.round(w * size).astype(int))
+    widths[-1] += size - int(widths.sum())
+    widths[-1] = max(1, int(widths[-1]))
+
+    canvas = np.zeros((size, size, 3), dtype=np.float64)
+    if rng.rand() < 0.5:  # franjas verticales
+        x = 0
+        for col, wd in zip(rgb_cols, widths):
+            x1 = min(size, x + int(wd))
+            canvas[:, x:x1] = col
+            x = x1
+            if x >= size:
+                break
+    else:  # franjas horizontales
+        y = 0
+        for col, wd in zip(rgb_cols, widths):
+            y1 = min(size, y + int(wd))
+            canvas[y:y1, :] = col
+            y = y1
+            if y >= size:
+                break
+
+    gain = float(rng.uniform(light_range[0], light_range[1]))
+    canvas = canvas * gain + rng.normal(0.0, noise_sigma, canvas.shape)
+    canvas = np.clip(canvas, 0, 255).astype(np.uint8)
+
+    img = Image.fromarray(canvas, mode="RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=int(jpeg_quality))
+    return buf.getvalue()
+
+
 # --- Split estratificado reproducible -----------------------------------------
 
 
