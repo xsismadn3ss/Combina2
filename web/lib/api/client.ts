@@ -49,7 +49,7 @@ export async function getHealth(): Promise<{ status: string }> {
 }
 
 export async function getHarmony(): Promise<string[]> {
-  const res = await fetch(apiUrl("/api/v1/harmony/"), { cache: "no-store" });
+  const res = await fetch(apiUrl("/api/v1/harmony"), { cache: "no-store" });
   return handleResponse<string[]>(res);
 }
 

@@ -55,6 +55,13 @@ def test_local_frontend_origin_is_allowed_by_cors():
 
 
 def test_harmony_lists_four_types():
+    # Sin barra final: es la ruta que usa el frontend (same-origin proxy).
+    response = client.get(f"{APICOnfig.prefix}/harmony")
+    assert response.status_code == 200
+    assert set(response.json()) == {h.value for h in HarmonyType}
+
+
+def test_harmony_trailing_slash_alias_does_not_redirect():
     response = client.get(f"{APICOnfig.prefix}/harmony/")
     assert response.status_code == 200
     assert set(response.json()) == {h.value for h in HarmonyType}
