@@ -6,7 +6,9 @@ uv.lock
 __pycache__
 *.db
 *.db-journal
+!backend/training.db
 backend/.venv/
+backend/.venv-tf/
 web/node_modules/
 web/.next/
 # NOTA: backend/models/*.keras SI se versionan (entregable de producción, ver
