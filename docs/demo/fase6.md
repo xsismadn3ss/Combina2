@@ -246,8 +246,9 @@ Comprobar: `{"ok":true}`. Casos validados por `backend/tests/test_contract.py`:
 
 ## 5. Evidencia
 
-Artefactos de la ejecución (fuera del repo, en
-`C:\Users\Soporte IT\AppData\Local\Temp\opencode\fase6\`):
+Artefactos de la ejecución, **versionados en [`docs/demo/evidence/`](./evidence/)**
+(se generaron originalmente en `%TEMP%` y se copiaron al repo para que la
+evidencia sea reproducible sin depender de una máquina):
 
 - Entradas: `colorida.png` (rejilla 3×2, 240×240), `gris.png` (degradado
   horizontal, 240×240), `invalido.txt`.
@@ -266,8 +267,12 @@ Artefactos de la ejecución (fuera del repo, en
   - `05-identificar-needsretry.png` — “Tonos de un color”, “Coincidencia: 93%”,
     aviso de imagen monocroma.
   - `06-mobile-drawer.png` — drawer de navegación móvil abierto.
-- Informes de evaluación regenerados en el repo: `backend/eval-report.json`,
-  `backend/eval-report.md`.
+- Informe de evaluación de referencia: `evidence/eval-report.md` (12/12 gates,
+  26 métricas de manifiesto OK). Los reportes locales `backend/eval-report.*`
+  están gitignored y se regeneran con el comando de §5.
+- CI verde de la rama `22-combina2` (run `39482806018`, commit `98a4b31`):
+  `Backend runtime (3.14)`, `Backend ML (3.12 + TF 2.21, eval estricta)` y
+  `Web (Node 22)` en success.
 
 Comandos de reproducción de la evidencia API (desde la raíz, con el backend
 levantado):

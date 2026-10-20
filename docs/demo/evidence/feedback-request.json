@@ -1,0 +1,30 @@
+﻿{
+    "palette":  {
+                    "fallback":  false,
+                    "type":  "analogo",
+                    "colors":  [
+                                   {
+                                       "value":  "#2A9D8F",
+                                       "role":  "primary"
+                                   },
+                                   {
+                                       "value":  "#1D3557",
+                                       "role":  "secondary"
+                                   },
+                                   {
+                                       "value":  "#E63946",
+                                       "role":  "secondary"
+                                   },
+                                   {
+                                       "value":  "#235C39",
+                                       "role":  "accent"
+                                   },
+                                   {
+                                       "value":  "#3B779B",
+                                       "role":  "accent"
+                                   }
+                               ]
+                },
+    "accepted":  true,
+    "score":  0.8941118717193604
+}
