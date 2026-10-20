@@ -7,7 +7,7 @@ name = "combina2-backend"
 version = "0.1.0"
 description = "Combina2 backend: FastAPI + TensorFlow. Fase 6: redes E/G/C, eval, calibracion y versionado."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
@@ -23,10 +23,13 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = [
-    # Inferencia neuronal (redes E/G/C, fases 3-4). Opcional en Fase 1:
-    # services/inference.py importa TF de forma perezosa y usa el motor
-    # clasico (fallback) si no esta instalado o no hay .keras activo.
-    "tensorflow>=2.16.0",
+    # Inferencia neuronal (redes E/G/C, fases 3-4). Opcional en el runtime
+    # local sin TF: services/inference.py importa TF de forma perezosa y usa
+    # el motor clasico (fallback) si no esta instalado o no hay .keras activo.
+    # El Docker de produccion SI instala este extra (Python 3.12), con las
+    # mismas versiones que los .keras del manifiesto.
+    "tensorflow-cpu==2.21.0",
+    "keras==3.15.1",
 ]
 
 [tool.setuptools.packages.find]

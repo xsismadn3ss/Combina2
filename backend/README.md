@@ -18,13 +18,14 @@ pytest                                        # tests de contrato
 
 ## Venvs: runtime vs entrenamiento
 
-Solo hay Python 3.14 en el sistema y TensorFlow publica `2.22.0rc0` para 3.14
-(pre-release); para entrenar con TF estable se usa un venv separado con 3.12:
+El runtime se puede ejecutar en Python 3.12+ (`pyproject.toml`:
+`requires-python = ">=3.12"`). En Docker/producción se usa **Python 3.12 con
+TensorFlow** para cargar las redes E/G/C; localmente hay dos venvs:
 
 | venv | Python | Paquetes | Uso |
 |---|---|---|---|
-| `backend/.venv` | 3.14 | runtime **sin TF** (`-e .`) | API, `pytest` (el path con red E activa nunca importa sklearn ni exige TF: sin TF hay fallback) |
-| `backend/.venv-tf` | 3.12 | `tensorflow-cpu` + `numpy` + `pillow` + `scikit-learn` (+ deps de API para tests) | **entrenamiento y eval**: `scripts/train_*.py` y `python -m eval.run_eval` |
+| `backend/.venv` | 3.14 | runtime **sin TF** (`-e .`) | API, `pytest` (sin TF hay fallback) |
+| `backend/.venv-tf` | 3.12 | `tensorflow-cpu` + `numpy` + `pillow` + `scikit-learn` (+ deps de API para tests) | **entrenamiento, eval e inferencia real**: `scripts/train_*.py`, `python -m eval.run_eval` |
 
 ```bash
 uv venv backend/.venv-tf --python 3.12
@@ -33,11 +34,13 @@ backend/.venv-tf/bin/python scripts/train_extract.py --epochs 50  # red E
 ```
 
 `requirements-ml.txt` fija TF 2.21.0/Keras 3.15.1 y usa **Python 3.12**: TF
-estable no publica wheel para 3.14 (por eso el runtime 3.14 corre sin TF y los
-tests de modelo hacen skip).
+estable no publica wheel para 3.14. El `Dockerfile` de producción usa también
+Python 3.12 e instala el extra `.[ml]` (`tensorflow-cpu==2.21.0`,
+`keras==3.15.1`), por lo que en Railway las redes cargan de verdad; si TF o un
+`.keras` faltan, la API sigue respondiendo por el fallback clásico.
 
-(`pyproject.toml` exige `>=3.14`, así que en `.venv-tf` se instalan los
-paquetes sueltos sin `-e .`; los tests corren igual por `pythonpath = ["."]`.)
+(`pyproject.toml` exige `>=3.12`, así que en `.venv-tf` también podría usarse
+`-e .`; los tests corren igual por `pythonpath = ["."]`.)
 Ambos venvs están gitignored; los `.keras` de `backend/models/` **sí** se
 versionan.
 
@@ -45,7 +48,8 @@ versionan.
 
 | Método | Ruta | Motor hoy |
 |---|---|---|
-| GET | `/health` | readiness |
+| GET | `/health` | liveness (200, sin cargar modelos) |
+| GET | `/ready` | readiness real de E/G/C (200/503; `storage: models_only`) |
 | GET | `/harmony`, `/colors/roles` | enums |
 | GET | `/models` | registro read-only desde `models/manifest.json` (sin TF) |
 | POST | `/palette/extract` | red E; fallback KMeans clásico si E no está disponible |
@@ -54,6 +58,7 @@ versionan.
 | POST | `/feedback` | persiste en sqlite |
 
 Contratos: [`../docs/api.md`](../docs/api.md). Modelos: [`models/README.md`](models/README.md).
+Despliegue en Railway: [`../docs/deployment.md`](../docs/deployment.md).
 
 ## Evaluación (E/G/C) y gates
 

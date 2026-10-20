@@ -1,0 +1,212 @@
+# Despliegue en Railway
+
+Arquitectura de producción de Combina2: **dos servicios Docker** del mismo repo,
+sin base de datos gestionada.
+
+```
+navegador
+   │  https://<web-publica>/api/v1/...      (same-origin)
+   ▼
+[web] Next.js standalone (público, puerto 3000)
+   │  rewrite a BACKEND_INTERNAL_URL
+   │  http://backend.railway.internal:8000  (red privada, HTTP)
+   ▼
+[backend] FastAPI + TensorFlow (privado, puerto 8000)
+   │  /app/models/*.keras + manifest.json   (solo artefactos)
+   ▼
+respuesta JSON
+```
+
+- **web** es el único servicio con dominio público:
+  `https://combina2.up.railway.app`.
+- **backend** no expone dominio público: solo se alcanza por la red privada de
+  Railway (`http://<servicio>.railway.internal:<puerto>`, **sin `https`**).
+- El frontend usa **same-origin**: en producción `NEXT_PUBLIC_API_URL` queda
+  vacía, el navegador pide rutas relativas `/api/v1/...` y Next las proxya al
+  backend. No hay CORS ni DNS privado expuesto al cliente.
+
+## Servicios y root directories
+
+| Servicio | Root directory | Dockerfile | Config | Healthcheck |
+|---|---|---|---|---|
+| `backend` | `backend` | `backend/Dockerfile` | Service settings | `GET /ready` (120 s) |
+| `web` | `web` | `web/Dockerfile` | Service settings | `GET /` (60 s) |
+
+En Railway, cada servicio se crea apuntando al repo y se configura el **root
+directory** correspondiente; así el Dockerfile de cada carpeta se resuelve
+correctamente. La configuración se guarda como **service settings** de Railway
+(builder `DOCKERFILE`, `rootDirectory`, `dockerfilePath`, healthcheck y política
+de reinicio), no en `railway.toml`.
+
+> `railway.json` / `railway.toml` están **deprecados** por Railway. No se usan en
+> este repo. Para infraestructura reproducible, la alternativa oficial es IaC en
+> `.railway/railway.ts` (`railway config pull` / `plan` / `apply`).
+
+## Requisitos de imagen
+
+- Backend: **Python 3.12** + `tensorflow-cpu==2.21.0` y `keras==3.15.1` (extra
+  `.[ml]` de `backend/pyproject.toml`), las mismas versiones con las que se
+  entrenaron los `.keras`. `libgomp1` se instala por OpenMP.
+- Frontend: Node 20, salida `standalone`.
+- Los `.keras` y `manifest.json` viven en el repo (`backend/models/`) y se
+  copian a la imagen.
+
+## Variables
+
+### Servicio `web`
+
+| Variable | Valor | Notas |
+|---|---|---|
+| `BACKEND_INTERNAL_URL` | `http://backend.railway.internal:8000` | **Build arg**: `next.config.ts` compila los rewrites en build. Railway inyecta las variables como build args si el Dockerfile las declara con `ARG` (ya está). Usa el nombre real del servicio backend. |
+| `NEXT_PUBLIC_API_URL` | *(vacía / no definir)* | Vacía ⇒ same-origin (`/api/v1/...`). **No** poner `localhost`. |
+| `NEXT_PUBLIC_SITE_URL` | `https://combina2.up.railway.app` | **Build-time**: base de `canonical`, `og:url`, `og:image` y `twitter:image`. Si cambia el dominio, redeployar `web`. |
+| `PORT` | inyectada por Railway | Next standalone escucha en `$PORT`. |
+
+### Servicio `backend`
+
+| Variable | Valor | Notas |
+|---|---|---|
+| `PORT` | inyectada por Railway | El `CMD` expande `${PORT:-8000}`. |
+| `IDENTIFY_MIN_CONFIDENCE` | opcional, default `0.70` | Umbral de `/identify` para `needsRetry`. |
+| `TF_CPP_MIN_LOG_LEVEL` | `3` | Ya fijada en la imagen; reduce ruido de TF. |
+
+No hace falta `TRAINING_DB` ni ninguna credencial de base de datos.
+
+## SEO y previews (Open Graph / Twitter)
+
+El metadata vive en `web/app/layout.tsx` y usa la imagen
+`web/public/combina2.jpg` (1408×768) como preview:
+
+- `title`: **Combina2**
+- `description`: *Genera o identifica paletas de colores tomando una imagen ✨*
+- `openGraph.images` y `twitter.images` → `https://combina2.up.railway.app/combina2.jpg`
+- `twitter:card`: `summary_large_image`
+- `canonical` y `og:url` → `https://combina2.up.railway.app`
+
+La imagen debe estar disponible sin autenticación (Next la sirve desde
+`public/`). Para comprobar un preview después de un deploy:
+
+```bash
+curl -s -A "facebookexternalhit/1.1" https://combina2.up.railway.app/ \
+  | grep -E 'og:(title|description|image)|twitter:(card|image)'
+curl -sI https://combina2.up.railway.app/combina2.jpg   # 200 image/jpeg
+```
+
+Además se puede re-escanear en el [Sharing Debugger de Facebook](https://developers.facebook.com/tools/debug/),
+el [Card Validator de X](https://cards-dev.twitter.com/validator) o el
+[Post Inspector de LinkedIn](https://www.linkedin.com/post-inspector/). Si el
+preview queda cacheado, fuerza un nuevo scrape en la herramienta.
+
+> **CRÍTICO — `training.db` no se despliega.** `backend/training.db` es evidencia
+> local de entrenamiento (runs/feedback); **no se copia a la imagen** (el
+> `Dockerfile` solo copia `app/` y `models/`, y `.dockerignore` lo excluye) y
+> **no se usa en runtime**. La inferencia y `/ready` dependen únicamente de
+> `models/*.keras` + `models/manifest.json`.
+
+## Build y despliegue
+
+```bash
+# desde la raíz del repo
+railway link --project combina2
+railway service link backend && railway up --service backend
+railway service link web && railway up --service web
+```
+
+También se puede desplegar desde el dashboard (servicio → Deploy) o conectando
+cada servicio al repo de GitHub con su `rootDirectory` (`backend` / `web`) para
+auto-deploy en cada push. En ese caso, el build de `web` recibe
+`BACKEND_INTERNAL_URL` como variable/build arg.
+
+El build del backend instala TensorFlow (unos minutos la primera vez). El
+frontend necesita `BACKEND_INTERNAL_URL` disponible **en el build**; si se
+cambia el nombre del servicio backend, hay que redeployar `web` para recompilar
+los rewrites.
+
+### Logs
+
+```bash
+railway logs --service backend --lines 200
+railway logs --service web --lines 200
+railway logs --service backend --build --lines 200   # build/deploy
+```
+
+Si el deploy queda unhealthy, revisar primero el log de build (fallo de
+instalación de TF) y luego el arranque (`uvicorn`, carga de modelos).
+
+## Healthchecks
+
+- **Backend `GET /ready`** (`backend/app/main.py` →
+  `inference.readiness_report()`): 200 solo si los tres slots (`extract`,
+  `generate`, `classify`) resuelven su `.keras` activo, el archivo existe y su
+  `sha256` coincide, **y** el modelo carga en Keras. Si algo falla devuelve 503
+  con `ready:false`, `fallback:true` y el `error` por slot. `storage` siempre es
+  `models_only`.
+- **Backend `GET /health`**: liveness puro, 200 `{"status":"ok"}` sin cargar
+  modelos (no penaliza el arranque).
+- **Web `GET /`**: 200 cuando Next sirve la home.
+- La primera llamada a `/ready` carga los modelos en memoria; las siguientes
+  usan la caché. El timeout de 120 s cubre el arranque en frío.
+
+## Rollback
+
+### Código
+
+1. Railway → servicio → **Deployments**.
+2. Elegir el deployment anterior sano → **Redeploy**.
+3. Verificar `GET /ready` (vía web: `https://<web-publica>/ready`) y el smoke
+   E2E.
+
+El redeploy arranca un proceso nuevo: la caché de modelos se descarta.
+
+### Modelos
+
+El registro vive en `backend/models/manifest.json` (ver
+`docs/retraining.md` y `backend/models/README.md`). Un rollback mueve
+`active`/`previous`; **no borra versiones**.
+
+```bash
+cd backend
+.venv\Scripts\python.exe scripts\manage_models.py list
+.venv\Scripts\python.exe scripts\manage_models.py rollback --slot classify
+.venv\Scripts\python.exe scripts\manage_models.py verify
+```
+
+Después:
+
+1. Commit del `manifest.json` (y de los `.keras` si el cambio los incluye).
+2. `railway up --service backend` o redeploy del mismo commit.
+3. Confirmar en `/ready` que el slot reporta el archivo esperado y
+   `loaded: true`.
+
+> Nota: `manage_models.py` actúa **en local**; producción solo cambia cuando se
+> despliega el manifiesto actualizado.
+
+## Smoke E2E
+
+Con la URL pública del servicio `web`:
+
+```bash
+WEB="https://combina2.up.railway.app"
+
+curl -fsS "$WEB/health"     # {"status":"ok"}
+curl -fsS "$WEB/ready"      # ready:true, 3 modelos loaded:true, storage:"models_only"
+
+curl -fsS -X POST "$WEB/api/v1/palette/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"colors":["#FF0000"],"harmony":"complementario","topK":3}'
+
+curl -fsS -X POST "$WEB/api/v1/palette/extract" \
+  -F "file=@ruta/a/foto.jpg"
+
+curl -fsS -X POST "$WEB/api/v1/palette/identify" \
+  -F "file=@ruta/a/foto.jpg"
+```
+
+Comprobaciones esperadas:
+
+- `/ready`: HTTP 200, `ready:true`, `fallback:false`, los tres modelos
+  `loaded:true`, `storage:"models_only"`.
+- `/palette/identify` y `/palette/extract`: `fallback:false` (modelos reales).
+  `identify` incluye `needsRetry` y `confidenceCalibrated`.
+- Si `fallback:true`, el backend no cargó TF/modelos: revisar `/ready` y los
+  logs del servicio backend.
