@@ -49,8 +49,13 @@ class CreatePaletteRequest(BaseModel):
         description="Colores base en formato hexadecimal",
     )
     harmony: HarmonyType | None = Field(
-        default=HarmonyType.COMPLEMENTARY,
-        description="Armonía a aplicar (opcional). En Fase 4+ actúa como filtro del ranking.",
+        default=None,
+        description=(
+            "Armonía a aplicar. Omitido o `null` = \"cualquier estilo\": se "
+            "devuelven propuestas con tipos variados (rotación determinista de "
+            "las 4 armonías). Un valor explícito filtra/rerankea el ranking a "
+            "esa armonía."
+        ),
     )
     topK: int = Field(
         default=5,
