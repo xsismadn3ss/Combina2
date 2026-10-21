@@ -53,7 +53,7 @@ versionan.
 | GET | `/harmony`, `/colors/roles` | enums |
 | GET | `/models` | registro read-only desde `models/manifest.json` (sin TF) |
 | POST | `/palette/extract` | red E; fallback KMeans clásico si E no está disponible |
-| POST | `/palette/generate` | red G + condicionamiento armónico con `topK`; fallback HSL |
+| POST | `/palette/generate` | red G + condicionamiento armónico con `topK` (`harmony` null/omitido = rotación determinista de las 4 armonías); fallback HSL |
 | POST | `/palette/identify` | pipeline E→C con calibración; fallback `predominant` |
 | POST | `/feedback` | persiste en sqlite |
 

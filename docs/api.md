@@ -13,10 +13,19 @@ amplía con `weight?`, `score?`, `confidence?`, `fallback?`.
 
 ## POST /api/v1/palette/generate (red G)
 
-- **Req:** `{colors: ["#FF5733", ...] (1..5), topK?: 1..10 = 5, harmony?: filtro opcional}`.
+- **Req:** `{colors: ["#FF5733", ...] (1..5), topK?: 1..10 = 5, harmony?: "complementario" |
+  "triada" | "analogo" | "monocromatica" | null = null}`.
   Si se envían más de 5 colores base, responde `400`.
 - **Resp 200:** `{palettes: [{type, colors: [5×Color], score}], fallback: bool}` rankeadas
-  por `score` desc. `harmony` (si se envía) filtra/rerankea, ya no limita a una sola paleta.
+  por `score` desc.
+- **`harmony` omitido o `null` = "cualquier estilo":** cada propuesta usa una armonía
+  real distinta, elegida por una rotación **determinista** de
+  `[complementario, triada, analogo, monocromatica]`. El índice inicial se deriva de un
+  hash estable de los colores ancla normalizados (misma entrada → mismo resultado, y no
+  siempre empieza en complementario). Con `topK >= 4` aparecen las 4 clases; con
+  `topK < 4` se devuelve el prefijo/subconjunto de esa rotación.
+- **`harmony` explícita:** filtra/rerankea todas las propuestas a ese tipo (contrato
+  anterior intacto). En ambos modos cada `type` refleja la geometría realmente usada.
 - **Errores:** `400` HEX inválido (mismo texto que hoy), `422` validación pydantic.
 
 ## POST /api/v1/palette/identify (E→C)

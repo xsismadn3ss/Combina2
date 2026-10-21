@@ -15,6 +15,7 @@ El path con modelo E activo NO importa sklearn: `app.services.classic` solo se
 importa dentro de las funciones de fallback.
 """
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -330,6 +331,13 @@ def _extract_with_model(model: Any, image_bytes: bytes) -> list[Color] | None:
 
 _HARMONY_LABELS = ["complementario", "triada", "analogo", "monocromatica"]
 _HARMONY_TO_IDX = {h: i for i, h in enumerate(_HARMONY_LABELS)}
+# Orden fijo de la rotación para el modo "cualquier estilo" (`harmony=None`).
+_HARMONY_ROTATION = (
+    HarmonyType.COMPLEMENTARY,
+    HarmonyType.TRIADIC,
+    HarmonyType.ANALOGOUS,
+    HarmonyType.MONOCHROMATIC,
+)
 _RETRY_SUGGESTION = (
     "La foto no tiene suficiente variedad de color; prueba con mejor luz o una "
     "imagen más colorida."
@@ -343,15 +351,52 @@ _GRAY_SUGGESTION = (
 COLORFULNESS_RETRY_MIN = LOW_INFO_CHROMA_MAX
 
 
+def _normalized_anchor_key(base_hex_colors: list[str]) -> str:
+    """Clave estable de las anclas para derivar el inicio de la rotación."""
+    return "|".join(color.strip().upper() for color in base_hex_colors)
+
+
+def _anchor_rotation_start(base_hex_colors: list[str]) -> int:
+    """Índice inicial de la rotación a partir del hash estable de las anclas.
+
+    Misma entrada (colores normalizados a mayúsculas, en orden) → mismo inicio;
+    entradas distintas reparten el arranque, de forma que no siempre se empieza
+    por `complementario`.
+    """
+    digest = hashlib.sha256(_normalized_anchor_key(base_hex_colors).encode("utf-8"))
+    return int(digest.hexdigest()[:8], 16) % len(_HARMONY_ROTATION)
+
+
+def harmony_sequence(
+    base_hex_colors: list[str], harmony: HarmonyType | None, count: int
+) -> list[HarmonyType]:
+    """Armonía real de cada propuesta (modo explícito o "cualquier estilo").
+
+    - `harmony` explícita: todas las propuestas usan ese tipo (filtro actual).
+    - `harmony=None`: round-robin sobre `_HARMONY_ROTATION` con índice inicial
+      derivado del hash estable de las anclas. Con ``count >= 4`` aparecen las
+      cuatro clases; con ``count < 4`` se devuelve el subconjunto de la rotación.
+    """
+    count = max(1, int(count))
+    if harmony is not None:
+        return [harmony] * count
+    start = _anchor_rotation_start(base_hex_colors)
+    return [
+        _HARMONY_ROTATION[(start + index) % len(_HARMONY_ROTATION)]
+        for index in range(count)
+    ]
+
+
 def generate_palettes(
-    base_hex_colors: list[str], harmony: HarmonyType, top_k: int
+    base_hex_colors: list[str], harmony: HarmonyType | None, top_k: int
 ) -> GenerateResponse:
+    count = max(1, int(top_k))
     model = load_keras_model("generate")
     if model is not None:
-        palettes = _generate_with_model(model, base_hex_colors, harmony, top_k)
-        if palettes is not None:
+        candidates = _generate_candidates(model, base_hex_colors, harmony, count)
+        if candidates is not None:
             return GenerateResponse(
-                palettes=_condition_palettes(base_hex_colors, harmony, top_k, palettes),
+                palettes=_condition_palettes(base_hex_colors, candidates, count),
                 fallback=False,
             )
     from app.ml.color_spaces import ColorConverter
@@ -360,18 +405,19 @@ def generate_palettes(
     # conservan al inicio de cada propuesta y la armonía solo completa la paleta.
     anchors = [color.upper() for color in base_hex_colors]
     hue, saturation, lightness = ColorConverter.hex_to_hsl(anchors[0])
-    harmony_offsets = {
-        HarmonyType.ANALOGOUS: (-30.0, 30.0),
-        HarmonyType.TRIADIC: (120.0, 240.0),
-        HarmonyType.COMPLEMENTARY: (180.0, 0.0),
-        HarmonyType.MONOCHROMATIC: (0.0, 0.0),
-    }.get(harmony, (180.0, 0.0))
+    sequence = harmony_sequence(base_hex_colors, harmony, count)
     variants: list[ScoredPalette] = []
-    for index in range(max(1, int(top_k))):
+    for index, current_harmony in enumerate(sequence):
+        harmony_offsets = {
+            HarmonyType.ANALOGOUS: (-30.0, 30.0),
+            HarmonyType.TRIADIC: (120.0, 240.0),
+            HarmonyType.COMPLEMENTARY: (180.0, 0.0),
+            HarmonyType.MONOCHROMATIC: (0.0, 0.0),
+        }.get(current_harmony, (180.0, 0.0))
         colors = [Color(value=value, role="primary" if i == 0 else "secondary")
                   for i, value in enumerate(anchors)]
         variation = float(index) * 22.0
-        if harmony == HarmonyType.MONOCHROMATIC:
+        if current_harmony == HarmonyType.MONOCHROMATIC:
             tones = [
                 ColorConverter.hsl_to_hex(hue, max(35.0, saturation), tone_lightness).upper()
                 for tone_lightness in (max(12.0, lightness - 28.0 - variation),
@@ -401,32 +447,76 @@ def generate_palettes(
             ).upper()
             if tone not in {color.value for color in colors}:
                 colors.append(Color(value=tone, role="accent"))
-        variants.append(ScoredPalette(type=harmony.value, colors=colors,
+        variants.append(ScoredPalette(type=current_harmony.value, colors=colors,
                                       score=round(1.0 - index * 0.01, 2)))
     return GenerateResponse(palettes=variants, fallback=True)
 
 
+def _generate_candidates(
+    model: Any, base_hex_colors: list[str], harmony: HarmonyType | None, top_k: int,
+) -> list[tuple[HarmonyType, ScoredPalette]] | None:
+    """Propuestas de G con la armonía real de cada una.
+
+    Con armonía explícita hay una sola inferencia (path actual). En modo
+    "cualquier estilo" se infiere una vez por cada armonía de la rotación
+    (máximo 4, reutilizables) en lugar de enviar un one-hot todo ceros que
+    estaría fuera de distribución. Cada candidato conserva la armonía con la
+    que se resolvió para condicionarlo después con su geometría real.
+    """
+    if harmony is not None:
+        proposals = _generate_with_model(model, base_hex_colors, harmony, top_k)
+        if proposals is None:
+            return None
+        return [(harmony, proposal) for proposal in proposals]
+
+    sequence = harmony_sequence(base_hex_colors, None, top_k)
+    counts: dict[HarmonyType, int] = {}
+    for current_harmony in sequence:
+        counts[current_harmony] = counts.get(current_harmony, 0) + 1
+    per_harmony: dict[HarmonyType, list[ScoredPalette]] = {}
+    for current_harmony, needed in counts.items():
+        proposals = _generate_with_model(
+            model, base_hex_colors, current_harmony, needed
+        )
+        if proposals is None:
+            return None
+        per_harmony[current_harmony] = proposals
+    cursors = {current_harmony: 0 for current_harmony in counts}
+    candidates: list[tuple[HarmonyType, ScoredPalette]] = []
+    for current_harmony in sequence:
+        proposals = per_harmony[current_harmony]
+        position = cursors[current_harmony]
+        cursors[current_harmony] = position + 1
+        candidates.append(
+            (current_harmony, proposals[min(position, len(proposals) - 1)])
+        )
+    return candidates
+
+
 def _condition_palettes(
-    anchors: list[str], harmony: HarmonyType, top_k: int,
-    model_palettes: list[ScoredPalette],
+    anchors: list[str], candidates: list[tuple[HarmonyType, ScoredPalette]], top_k: int,
 ) -> list[ScoredPalette]:
     """Keep every selected color fixed; generate distinct, harmony-conditioned accents.
 
     The learned head is useful for its compatibility score, but its single output
     is not a sampling distribution. We therefore condition its output with
     deliberately separated harmonic constructions rather than adding Lab jitter.
+    `candidates` lleva la armonía real de cada propuesta, de modo que el modo
+    "cualquier estilo" puede mezclar geometrías en una misma respuesta.
     """
     if len(anchors) > 5:
         raise ValueError("Se pueden seleccionar como máximo cinco colores")
     hue, saturation, lightness = ColorConverter.hex_to_hsl(anchors[0])
-    offsets = {
-        HarmonyType.ANALOGOUS: (-30.0, 30.0),
-        HarmonyType.TRIADIC: (120.0, 240.0),
-        HarmonyType.COMPLEMENTARY: (180.0, 0.0),
-        HarmonyType.MONOCHROMATIC: (0.0, 0.0),
-    }.get(harmony, (180.0, 0.0))
     result = []
-    for index, proposed in enumerate(model_palettes[:max(1, int(top_k))]):
+    for index, (harmony, proposed) in enumerate(
+        candidates[:max(1, int(top_k))]
+    ):
+        offsets = {
+            HarmonyType.ANALOGOUS: (-30.0, 30.0),
+            HarmonyType.TRIADIC: (120.0, 240.0),
+            HarmonyType.COMPLEMENTARY: (180.0, 0.0),
+            HarmonyType.MONOCHROMATIC: (0.0, 0.0),
+        }.get(harmony, (180.0, 0.0))
         colors = [Color(value=h.upper(), role="primary" if i == 0 else "secondary")
                   for i, h in enumerate(anchors)]
         rotation = index * 37.0
@@ -453,6 +543,8 @@ def _condition_palettes(
             colors.append(Color(value=tone.upper(), role=ColorRole.ACCENT.value))
         result.append(ScoredPalette(type=harmony.value, colors=colors,
                                     score=proposed.score))
+    # Contrato: ranking por score descendente también cuando se mezclan armonías.
+    result.sort(key=lambda palette: palette.score, reverse=True)
     return result
 
 
