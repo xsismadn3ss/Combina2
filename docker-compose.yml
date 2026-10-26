@@ -1,5 +1,6 @@
 services:
   backend:
+    container_name: combina2-backend
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -12,8 +13,11 @@ services:
       timeout: 30s
       retries: 6
       start_period: 60s
+    networks:
+      - combina2
 
   web:
+    container_name: combina2-web
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -27,3 +31,10 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - combina2
+
+networks:
+  combina2:
+    name: combina2
+    driver: bridge
