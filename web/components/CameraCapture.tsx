@@ -214,13 +214,41 @@ export function CameraCapture({ open, onOpenChange, onCapture, isLoading }: Prop
     const video = videoRef.current;
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
 
-    const scale = Math.min(1, MAX_CAPTURE_EDGE / Math.max(video.videoWidth, video.videoHeight));
-    const width = Math.max(1, Math.round(video.videoWidth * scale));
-    const height = Math.max(1, Math.round(video.videoHeight * scale));
+    // El <video> usa `object-cover`, así que una parte del frame queda fuera de
+    // la caja. Recortamos el canvas a la región realmente visible para que la
+    // foto sea WYSIWYG.
+    const rect = video.getBoundingClientRect();
+    const cw = rect.width;
+    const ch = rect.height;
+    if (cw === 0 || ch === 0) return;
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const containerAspect = cw / ch;
+    const videoAspect = vw / vh;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = vw;
+    let sh = vh;
+    if (videoAspect > containerAspect) {
+      // El frame es más ancho que la caja: se recortan los lados.
+      sw = vh * containerAspect;
+      sx = (vw - sw) / 2;
+    } else {
+      // El frame es más alto que la caja: se recorta arriba y abajo.
+      sh = vw / containerAspect;
+      sy = (vh - sh) / 2;
+    }
+
+    // Escala el recorte al tamaño de la caja visible, con lado mayor <= 1600 px.
+    const scale = Math.min(1, MAX_CAPTURE_EDGE / Math.max(sw, sh));
+    const outW = Math.max(1, Math.round(sw * scale));
+    const outH = Math.max(1, Math.round(sh * scale));
 
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = outW;
+    canvas.height = outH;
     const context = canvas.getContext("2d");
     if (!context) {
       setErrorKind("unknown");
@@ -230,10 +258,10 @@ export function CameraCapture({ open, onOpenChange, onCapture, isLoading }: Prop
 
     // La foto debe verse igual que el preview espejado de la cámara frontal.
     if (facingMode === "user") {
-      context.translate(width, 0);
+      context.translate(outW, 0);
       context.scale(-1, 1);
     }
-    context.drawImage(video, 0, 0, width, height);
+    context.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
 
     canvas.toBlob(
       (blob) => {
@@ -340,7 +368,7 @@ export function CameraCapture({ open, onOpenChange, onCapture, isLoading }: Prop
                 aria-label="Vista previa de la cámara"
                 onLoadedMetadata={() => setVideoReady(true)}
                 className={cn(
-                  "aspect-[4/3] w-full object-contain",
+                  "h-[55dvh] w-full object-cover sm:aspect-[4/3] sm:h-auto",
                   facingMode === "user" && "-scale-x-100"
                 )}
               />
@@ -380,7 +408,7 @@ export function CameraCapture({ open, onOpenChange, onCapture, isLoading }: Prop
 
         {status === "captured" && captured && (
           <div className="space-y-4">
-            <div className="overflow-hidden rounded-xl border bg-muted">
+            <div className="overflow-hidden rounded-xl border bg-black">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={captured.url}
