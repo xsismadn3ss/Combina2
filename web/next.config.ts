@@ -2,6 +2,9 @@ import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    agentUpgrade: "security",
+  },
   async rewrites() {
     const backend = process.env.BACKEND_INTERNAL_URL || "http://localhost:8000"
     return [
