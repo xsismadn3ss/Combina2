@@ -1,16 +1,26 @@
 "use client";
 import { useSyncExternalStore } from "react";
-import { Settings } from "lucide-react";
+import { Monitor, Moon, Settings, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { useTopK } from "@/hooks/useTopK";
 
 const emptySubscribe = () => () => {};
 
+const THEME_OPTIONS = [
+  { value: "light", label: "Claro", icon: Sun },
+  { value: "dark", label: "Oscuro", icon: Moon },
+  { value: "system", label: "Sistema", icon: Monitor },
+] as const;
+
 export default function ConfigPage() {
   const { topK, setTopK } = useTopK();
+  const { theme, setTheme } = useTheme();
   // true solo tras la hidratación: evita el mismatch con localStorage sin
   // setState dentro de un effect.
   const mounted = useSyncExternalStore(
@@ -20,19 +30,45 @@ export default function ConfigPage() {
   );
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="space-y-2">
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <div className="flex flex-col gap-2">
         <h1 className="flex items-center gap-2 font-heading text-2xl font-semibold">
           <Settings className="size-6" /> Preferencias
         </h1>
-        <p className="text-sm text-muted-foreground">Personaliza las propuestas que recibes.</p>
+        <p className="text-sm text-muted-foreground">Personaliza el tema y las propuestas que recibes.</p>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Tema</CardTitle>
+          <CardDescription>Elige cómo se ve la interfaz.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ButtonGroup aria-label="Tema de la interfaz" className="w-full">
+            {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
+              const active = mounted && theme === value;
+              return (
+                <Button
+                  key={value}
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  aria-pressed={active}
+                  onClick={() => setTheme(value)}
+                >
+                  <Icon data-icon="inline-start" aria-hidden />
+                  {label}
+                </Button>
+              );
+            })}
+          </ButtonGroup>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Número de propuestas</CardTitle>
           <CardDescription>Elige cuántas opciones de paleta quieres ver cada vez.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <Label htmlFor="proposal-count">Cantidad</Label>
             <Badge variant="outline">Número de propuestas: {mounted ? topK : "…"}</Badge>
