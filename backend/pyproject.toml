@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "numpy>=2.0.0",
+    "pg8000>=1.31.6",
     "pillow>=12.3.0",
     "psycopg[binary]>=3.3.6",
     "pyarrow>=15.0.0",

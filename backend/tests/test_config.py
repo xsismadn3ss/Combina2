@@ -16,11 +16,11 @@ from app.config import (
     [
         (
             "postgres://user:secret@host:5432/db",
-            "postgresql+psycopg://user:secret@host:5432/db",
+            "postgresql+pg8000://user:secret@host:5432/db",
         ),
         (
             "postgresql://user:secret@host:5432/db",
-            "postgresql+psycopg://user:secret@host:5432/db",
+            "postgresql+pg8000://user:secret@host:5432/db",
         ),
         (
             "postgresql+psycopg://user:secret@host:5432/db",
@@ -28,11 +28,11 @@ from app.config import (
         ),
         (
             "postgresql://user:p%40ss@host/db?sslmode=require",
-            "postgresql+psycopg://user:p%40ss@host/db?sslmode=require",
+            "postgresql+pg8000://user:p%40ss@host/db?sslmode=require",
         ),
         (
             "POSTGRES://user:secret@host/db",
-            "postgresql+psycopg://user:secret@host/db",
+            "postgresql+pg8000://user:secret@host/db",
         ),
         # No es Postgres: se deja intacta.
         ("mysql://user:secret@host/db", "mysql://user:secret@host/db"),
@@ -50,16 +50,16 @@ def test_runtime_url_accepts_railway_style(monkeypatch):
         "DATABASE_URL", "postgresql://u:p@containers.railway.app:5432/railway"
     )
     assert runtime_database_url() == (
-        "postgresql+psycopg://u:p@containers.railway.app:5432/railway"
+        "postgresql+pg8000://u:p@containers.railway.app:5432/railway"
     )
 
 
 def test_training_url_accepts_heroku_style(monkeypatch):
     monkeypatch.setenv("TRAINING_DATABASE_URL", "postgres://u:p@localhost/training")
-    assert training_database_url() == "postgresql+psycopg://u:p@localhost/training"
+    assert training_database_url() == "postgresql+pg8000://u:p@localhost/training"
 
 
-def test_defaults_are_valid_psycopg_urls(monkeypatch):
+def test_defaults_use_psycopg_locally(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("TRAINING_DATABASE_URL", raising=False)
     assert runtime_database_url().startswith("postgresql+psycopg://")

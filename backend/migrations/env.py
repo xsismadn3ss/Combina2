@@ -58,13 +58,18 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    engine = create_engine(
-        get_url(),
-        poolclass=pool.NullPool,
-        connect_args={
+    url = get_url()
+    if url.startswith("postgresql+pg8000://"):
+        connect_args: dict = {"timeout": db_connect_timeout()}
+    else:
+        connect_args = {
             "connect_timeout": db_connect_timeout(),
             "application_name": "combina2-alembic",
-        },
+        }
+    engine = create_engine(
+        url,
+        poolclass=pool.NullPool,
+        connect_args=connect_args,
         future=True,
     )
     with engine.connect() as connection:

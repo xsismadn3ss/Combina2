@@ -1,4 +1,4 @@
-"""Engines SQLAlchemy (sync, psycopg 3) para runtime y entrenamiento.
+"""Engines SQLAlchemy (sync, pg8000/psycopg 3) para runtime y entrenamiento.
 
 La API es síncrona y FastAPI la ejecuta en el threadpool: SQLAlchemy sync es
 suficiente y evita el coste/complejidad de async. Cada engine se cachea por
@@ -30,7 +30,10 @@ _engines: dict[tuple[str, str, int], Engine] = {}
 _ready_cache: dict[str, tuple[float, bool]] = {}
 
 
-def _connect_args(application_name: str, timeout: int) -> dict:
+def _connect_args(url: str, application_name: str, timeout: int) -> dict:
+    # pg8000 usa `timeout`; psycopg/libpq usa `connect_timeout`.
+    if url.startswith("postgresql+pg8000://"):
+        return {"timeout": timeout}
     return {"connect_timeout": timeout, "application_name": application_name}
 
 
@@ -43,7 +46,7 @@ def get_engine(url: str, application_name: str, timeout: int) -> Engine:
             url,
             pool_pre_ping=True,
             pool_recycle=300,
-            connect_args=_connect_args(application_name, timeout),
+            connect_args=_connect_args(url, application_name, timeout),
             future=True,
         )
         _engines[key] = engine
@@ -96,6 +99,7 @@ def _probe(url: str) -> bool:
             url,
             poolclass=NullPool,
             connect_args=_connect_args(
+                url,
                 READY_APPLICATION_NAME,
                 min(READY_CONNECT_TIMEOUT, db_connect_timeout()),
             ),

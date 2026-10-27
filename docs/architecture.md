@@ -26,7 +26,7 @@ como **maestra de destilación** en entrenamiento, nunca en inferencia.
 │   │   │   ├── datasets.py         # loaders HF/API/sintético → PostgreSQL
 │   │   │   └── losses.py           # MSE-Lab + aproximación CIEDE2000
 │   │   ├── db/
-│   │   │   ├── engine.py           # engines psycopg (sync, pool_pre_ping)
+│   │   │   ├── engine.py           # engines pg8000/psycopg (sync, pool_pre_ping)
 │   │   │   ├── session.py          # runtime_session/training_session/get_session
 │   │   │   └── models/             # SQLModel: feedback + tablas de entrenamiento
 │   │   └── services/feedback.py    # snapshot + CSV export
@@ -86,6 +86,6 @@ La DB de entrenamiento **no** existe en producción.
 | 4 | Dataset público + sintético bootstrap | COLOURLovers/Color-Pedia dan escala; el motor HSL actual da etiquetas día-0 |
 | 5 | Next.js reemplaza Blazor (no convivencia) | Decisión del dueño; prototipado rápido con shadcn |
 | 6 | Fallback a reglas si falta el `.keras` | La API nunca se cae por un modelo ausente; responde con motor clásico + `fallback: true` |
-| 7 | PostgreSQL + SQLModel/SQLAlchemy 2 sync + psycopg 3 | Las dos bases (runtime y entrenamiento) comparten esquema/migraciones Alembic; sync encaja con FastAPI en threadpool y psycopg 3 tiene wheels en 3.12–3.14 |
+| 7 | PostgreSQL + SQLModel/SQLAlchemy 2 sync; pg8000 en runtime Railway y psycopg 3 en local/CI | Las dos bases comparten esquema/migraciones Alembic; sync encaja con FastAPI en threadpool. pg8000 evita el segfault nativo de psycopg binario + TensorFlow en el contenedor Linux |
 | 8 | La inferencia no depende de la DB | `/health`, `/ready` y `/palette/*` siguen funcionando si Postgres cae; solo el feedback/export devuelven error |
 | 9 | Feedback como snapshot JSONB sin FK a `palettes` | El feedback de producción puede referirse a paletas que no existen en la DB local; permite exportar/importar entre bases sin dependencias |

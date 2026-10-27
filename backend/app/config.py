@@ -60,19 +60,22 @@ def identify_min_confidence() -> float:
 
 
 def normalize_database_url(url: str) -> str:
-    """Normaliza la URL de Postgres al driver psycopg 3.
+    """Normaliza la URL de Postgres al driver de runtime.
 
-    Railway entrega ``postgresql://...``, Heroku usaba ``postgres://...`` y la
-    configuración local ya trae ``postgresql+psycopg://``. Solo se reescribe el
-    esquema (se preservan usuario, contraseña, host, puerto, base y query).
-    Cualquier URL que no sea Postgres (o que ya tenga driver) se devuelve igual.
+    Railway entrega ``postgresql://...`` y Heroku usaba ``postgres://...``.
+    Esas URLs se normalizan a **pg8000** (Python puro) porque el binario de
+    psycopg + TensorFlow provoca un segfault nativo en el contenedor Linux.
+    Las URLs locales que ya traen ``postgresql+psycopg://`` se respetan para
+    tests/scripts. Solo se reescribe el esquema (se preservan usuario,
+    contraseña, host, puerto, base y query); cualquier URL no Postgres se deja
+    igual.
     """
     value = (url or "").strip()
     if "://" not in value:
         return value
     scheme, rest = value.split("://", 1)
     if scheme.lower() in {"postgres", "postgresql"}:
-        return f"postgresql+psycopg://{rest}"
+        return f"postgresql+pg8000://{rest}"
     return value
 
 
