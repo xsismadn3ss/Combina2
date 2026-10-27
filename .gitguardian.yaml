@@ -1,0 +1,19 @@
+# Valores de desarrollo local/CI y placeholders de tests.
+# No son secretos reales: la configuración de producción vive en variables de
+# entorno de Railway y nunca se commitea.
+version: 2
+
+secret:
+  ignored_paths:
+    - ".env.example"
+    - "backend/alembic.ini"
+    - "backend/app/config.py"
+    - "backend/tests/"
+    - ".github/workflows/ci.yml"
+  ignored_matches:
+    - name: "postgres local dev password"
+      match: "combina2"
+    - name: "feedback export token de CI (no real)"
+      match: "ci-export-token"
+    - name: "feedback export token de tests (no real)"
+      match: "test-export-token"
