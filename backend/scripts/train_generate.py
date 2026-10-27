@@ -1,7 +1,8 @@
 """Entrena la red G generadora (Fase 4, 100% offline si fuentes públicas fallan).
 
 Pipeline:
-1. Paletas: lee palette_colors de training.db; si no alcanzan, fallback sintético
+1. Paletas: lee palette_colors de la DB de entrenamiento (PostgreSQL); si no
+   alcanzan, fallback sintético
    HSL vía ClassicPaletteGenerator + ruido Lab (idéntico a make_synthetic).
 2. Por paleta ground truth (5 colores) genera una muestra de entrenamiento:
    entrada = (10,3) Lab normalizado + mask (10,) + harmony one-hot (4,) con
@@ -31,12 +32,13 @@ import numpy as np
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app.db.sqlite import get_connection
+from app.db.session import training_session
 from app.ml.benchmarks import (
     build_generate_palette_list as build_palette_list,
     palette_to_generate_dataset as palette_to_dataset,
 )
 from app.ml.metrics import palette_delta_e
+from app.repositories import training as training_repo
 from app.services import model_registry
 
 
@@ -135,27 +137,18 @@ def save_and_register(
         assert len(reloaded.outputs) == 2
 
         tf_version, keras_version = model_registry.framework_versions()
-        conn = get_connection()
-        try:
-            cur = conn.execute(
-                "INSERT INTO training_runs(model, git_sha, params_json, metrics_json,"
-                " keras_path, tf_version, keras_version, calibration_json)"
-                " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    "generate",
-                    model_registry.git_sha(),
-                    json.dumps(params, sort_keys=True),
-                    json.dumps(metrics, sort_keys=True),
-                    f"backend/models/{out_path.name}",
-                    tf_version,
-                    keras_version,
-                    None,
-                ),
+        with training_session() as session:
+            run = training_repo.create_training_run(
+                session,
+                model="generate",
+                keras_path=f"backend/models/{out_path.name}",
+                git_sha=model_registry.git_sha(),
+                params_json=params,
+                metrics_json=metrics,
+                tf_version=tf_version,
+                keras_version=keras_version,
             )
-            conn.commit()
-            run_id = int(cur.lastrowid or 0)
-        finally:
-            conn.close()
+            run_id = int(run.id or 0)
 
         try:
             registered = model_registry.register_version(
@@ -168,12 +161,8 @@ def save_and_register(
                 filename=out_path.name,
             )
         except Exception:
-            conn = get_connection()
-            try:
-                conn.execute("DELETE FROM training_runs WHERE id = ?", (run_id,))
-                conn.commit()
-            finally:
-                conn.close()
+            with training_session() as session:
+                training_repo.delete_training_run(session, run_id)
             raise
     finally:
         if tmp_path.exists():

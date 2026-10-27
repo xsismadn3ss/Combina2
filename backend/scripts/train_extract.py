@@ -2,8 +2,9 @@
 
 Pipeline:
 
-1. Paletas: lee `palette_colors` de `training.db` (Fase 2); si no alcanzan,
-   completa con paletas aleatorias (todo offline, determinista con `--seed`).
+1. Paletas: lee `palette_colors` de la DB de entrenamiento (PostgreSQL, Fase 2);
+   si no alcanzan, completa con paletas aleatorias (todo offline, determinista
+   con `--seed`).
 2. Por paleta sintetiza un mosaico de bloques (`datasets.synthesize_mosaic`,
    proporciones Dirichlet = pesos aprox.) + ruido de luz/JPEG.
 3. Targets del maestro KMeans con los mismos parámetros que
@@ -20,7 +21,8 @@ Pipeline:
 Uso (venv SOLO-entrenamiento con TensorFlow, ver `backend/README.md`)::
 
     backend/.venv-tf/bin/python backend/scripts/train_extract.py --epochs 50
-    TRAINING_DB=/tmp/e.db backend/.venv-tf/bin/python backend/scripts/train_extract.py \\
+    TRAINING_DATABASE_URL=postgresql+psycopg://.../e \
+        backend/.venv-tf/bin/python backend/scripts/train_extract.py \
         --n-train 50 --n-val 10 --epochs 2 --seed 7
 """
 
@@ -36,7 +38,7 @@ import numpy as np
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app.db.sqlite import get_connection  # noqa: E402
+from app.db.session import training_session  # noqa: E402
 from app.ml.benchmarks import (  # noqa: E402
     build_extract_palette_list as build_palette_list,
     synthesize_extract_dataset as synthesize_dataset,
@@ -57,6 +59,7 @@ from app.ml.losses import (  # noqa: E402
     make_extract_sinkhorn_loss,
     match_by_distance,
 )
+from app.repositories import training as training_repo  # noqa: E402
 from app.services import model_registry  # noqa: E402
 from app.services.inference import extract_colors_from_outputs  # noqa: E402
 
@@ -315,27 +318,18 @@ def save_and_register(
         assert len(reloaded.outputs) == 3
 
         tf_version, keras_version = model_registry.framework_versions()
-        conn = get_connection()
-        try:
-            cur = conn.execute(
-                "INSERT INTO training_runs(model, git_sha, params_json, metrics_json,"
-                " keras_path, tf_version, keras_version, calibration_json)"
-                " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    "extract",
-                    model_registry.git_sha(),
-                    json.dumps(params, sort_keys=True),
-                    json.dumps(metrics, sort_keys=True),
-                    f"backend/models/{out_path.name}",
-                    tf_version,
-                    keras_version,
-                    None,
-                ),
+        with training_session() as session:
+            run = training_repo.create_training_run(
+                session,
+                model="extract",
+                keras_path=f"backend/models/{out_path.name}",
+                git_sha=model_registry.git_sha(),
+                params_json=params,
+                metrics_json=metrics,
+                tf_version=tf_version,
+                keras_version=keras_version,
             )
-            conn.commit()
-            run_id = int(cur.lastrowid or 0)
-        finally:
-            conn.close()
+            run_id = int(run.id or 0)
 
         try:
             registered = model_registry.register_version(
@@ -348,12 +342,8 @@ def save_and_register(
                 filename=out_path.name,
             )
         except Exception:
-            conn = get_connection()
-            try:
-                conn.execute("DELETE FROM training_runs WHERE id = ?", (run_id,))
-                conn.commit()
-            finally:
-                conn.close()
+            with training_session() as session:
+                training_repo.delete_training_run(session, run_id)
             raise
     finally:
         if tmp_path.exists():

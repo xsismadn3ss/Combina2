@@ -109,11 +109,47 @@ usa la T guardada y el split de test como referencia).
 - Solo expone nombres de archivo y metadatos; **nunca rutas absolutas**.
 - `previous` puede ser `null`; `files` puede estar vacío en manifiestos legacy.
 
-## GET /api/v1/harmony · GET /api/v1/colors/roles · GET /health
+## GET /api/v1/harmony · GET /api/v1/colors/roles · GET /health · GET /ready
 
-Sin cambios respecto a `main` (listan `HarmonyType` / `ColorRole`, readiness).
+Sin cambios de contrato respecto a `main` (listan `HarmonyType` / `ColorRole`).
+`/health` es liveness puro. `/ready` sigue devolviendo 200 solo si los 3
+modelos cargan; añade un campo informativo `database:{configured,reachable}`
+que no altera ese criterio.
 
 ## POST /api/v1/feedback (cierra el loop de entrenamiento)
 
 - **Req:** `{imageSha256?, palette: {type, colors}, accepted: bool, score?: 0..1}`.
-- **Resp 200:** `{ok: true}`. Persiste en `feedback` para re-entrenar G/C.
+- **Resp 200:** `{ok: true}`. Persiste el snapshot de la paleta en
+  PostgreSQL (`feedback`, `DATABASE_URL`) para re-entrenar G/C.
+- **Errores:** `422` validación pydantic; `503` si la DB no está configurada o
+  el insert falla, con `Retry-After: 30` y detalle genérico (sin DSN,
+  credenciales ni trazas). `/health` y `/ready` no dependen de la DB.
+
+## GET /api/v1/feedback/export.csv (export protegido)
+
+- **Auth:** `Authorization: Bearer $FEEDBACK_EXPORT_TOKEN`.
+  - Sin `FEEDBACK_EXPORT_TOKEN` configurado → **404** (el endpoint no existe).
+  - Token ausente/incorrecto → **401** (`WWW-Authenticate: Bearer`).
+  - Comparación con `secrets.compare_digest`.
+- **Query:** `from` / `to` (ISO-8601, sobre `created_at`), `accepted`
+  (`true|false`), `include_sha256` (default `true`). Ejemplo:
+  `/api/v1/feedback/export.csv?from=2026-01-01&to=2026-12-31&accepted=true`.
+- **Resp 200:** `text/csv; charset=utf-8` (UTF-8 **sin BOM**),
+  `Content-Disposition: attachment; filename="feedback.csv"`,
+  `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. Streaming por
+  lotes (`yield_per`), ordenado por `id`.
+- **Encabezados exactos y en este orden:**
+
+  ```csv
+  id,created_at,accepted,score,palette_type,palette_json,colors_hex,image_sha256
+  ```
+
+  - `created_at`: ISO-8601 UTC con sufijo `Z` (microsegundos).
+  - `accepted`: `true` / `false`.
+  - `score`: vacío si `NULL`; 6 decimales si existe.
+  - `palette_json`: JSON compacto UTF-8 (claves ordenadas).
+  - `colors_hex`: HEX del snapshot en orden, separados por `|`.
+  - `image_sha256`: vacío si no existe o si `include_sha256=false`.
+  - Mitigación de CSV injection: se prefija `'` a valores que empiezan por
+    `= + - @`.
+  - Nunca incluye imágenes, binarios ni rutas.

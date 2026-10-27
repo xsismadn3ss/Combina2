@@ -23,8 +23,10 @@ rollback. Si un `.keras` faltara o su hash no coincidiera, la inferencia intenta
 - Rollback = intercambiar `active` y `previous`; no se borra nada.
 - Nuestras redes son MLPs pequeñas (< 5 MB): caben en git normal. Solo si un futuro
   backbone convolucional supera ~50 MB se evaluará Git LFS; no es el caso hoy.
-- `backend/training.db` **sí se versiona como evidencia** de runs y feedback
-  (excepción `!backend/training.db` en `.gitignore`); no guarda pesos. Lo que
+- `backend/training.db` **sí se versiona como evidencia histórica** de runs y
+  feedback (excepción `!backend/training.db` en `.gitignore`) y está
+  **deprecado**: ningún código de `app/` lo usa. El esquema y los datos vivos
+  están en PostgreSQL (ver `docs/data.md`); no guarda pesos. Lo que
   **no** va al repo son los checkpoints intermedios de `scripts/` (se guardan
   como `.tmp-*.keras` y se registran/copian al final) ni las cachés
   (`.eval-cache/`).

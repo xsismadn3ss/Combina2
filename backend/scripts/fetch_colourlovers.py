@@ -11,8 +11,8 @@ código 0 para no romper el resto del pipeline; el volumen lo cubre
 `make_synthetic.py`. Solo stdlib (urllib), sin dependencias nuevas.
 
 Uso:
-    backend/.venv/bin/python backend/scripts/fetch_colourlovers.py
-    TRAINING_DB=/tmp/t.db backend/.venv/bin/python backend/scripts/fetch_colourlovers.py --limit 50
+    python scripts/fetch_colourlovers.py
+    TRAINING_DATABASE_URL=postgresql+psycopg://.../t python scripts/fetch_colourlovers.py --limit 50
 """
 
 from __future__ import annotations
@@ -28,8 +28,11 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app.db.sqlite import get_connection, get_db_path  # noqa: E402
+from app.config import training_database_url  # noqa: E402
+from app.db.engine import sanitized_url  # noqa: E402
+from app.db.session import training_session  # noqa: E402
 from app.ml.datasets import (  # noqa: E402
+    count_palettes,
     count_palettes_by_source,
     insert_palette,
     load_palette_keys,
@@ -42,6 +45,7 @@ OFFSETS = list(range(0, 1000, 100))  # 0..900
 NUM_RESULTS = 100
 TIMEOUT = 20
 RETRIES = 3
+BATCH_SIZE = 100  # commit por lote (no una transacción gigante)
 
 
 def fetch_page(hue: str, offset: int) -> tuple[list | None, str]:
@@ -77,14 +81,13 @@ def _normalize_rating(value) -> float | None:
 
 
 def run(limit: int | None = None) -> dict:
-    conn = get_connection()
     errors: list[str] = []
     pages_ok = 0
     seen_api = 0
     inserted = 0
     skipped = 0
-    try:
-        existing = load_palette_keys(conn)
+    with training_session() as session:
+        existing = load_palette_keys(session)
         stop = False
         for hue in HUE_OPTIONS:
             for offset in OFFSETS:
@@ -97,16 +100,25 @@ def run(limit: int | None = None) -> dict:
                     break  # sin más resultados para este hue
                 for pal in palettes:
                     colors = pal.get("colors") or []
-                    hexes = [c for c in (col.get("hex") if isinstance(col, dict) else col for col in colors) if c]
+                    hexes = [
+                        c
+                        for c in (
+                            col.get("hex") if isinstance(col, dict) else col
+                            for col in colors
+                        )
+                        if c
+                    ]
                     if len(hexes) < 2:
                         skipped += 1
                         continue
                     seen_api += 1
                     pid = insert_palette(
-                        conn,
+                        session,
                         source=SOURCE,
                         hexes=[h if h.startswith("#") else f"#{h}" for h in hexes],
-                        rating=_normalize_rating(pal.get("ranking") or pal.get("numVotes")),
+                        rating=_normalize_rating(
+                            pal.get("ranking") or pal.get("numVotes")
+                        ),
                         harmony_label=None,
                         existing_keys=existing,
                     )
@@ -114,6 +126,8 @@ def run(limit: int | None = None) -> dict:
                         skipped += 1
                     else:
                         inserted += 1
+                        if inserted % BATCH_SIZE == 0:
+                            session.commit()
                     if limit is not None and seen_api >= limit:
                         stop = True
                         break
@@ -121,13 +135,11 @@ def run(limit: int | None = None) -> dict:
                     break
             if stop:
                 break
-        conn.commit()
-        by_source = count_palettes_by_source(conn)
-        total = int(conn.execute("SELECT COUNT(*) FROM palettes").fetchone()[0])
-    finally:
-        conn.close()
+        session.commit()
+        by_source = count_palettes_by_source(session)
+        total = count_palettes(session)
     return {
-        "db": str(get_db_path()),
+        "db": sanitized_url(training_database_url()),
         "pages_ok": pages_ok,
         "pages_total": len(HUE_OPTIONS) * len(OFFSETS),
         "seen_api": seen_api,

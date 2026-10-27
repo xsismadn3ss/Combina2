@@ -28,7 +28,8 @@ Reglas de trabajo:
 - Frontend (`web/`): respeta los contratos OpenAPI del backend; nada de lógica de
   color en el front, solo presenta la API.
 - Modelos: los `.keras` van en `backend/models/` + entrada en `manifest.json`;
-  `training.db` nunca se commitea (ver `backend/models/README.md`).
+  `training.db` se conserva como evidencia histórica y no se usa en runtime
+  (ver `backend/models/README.md`).
 - No edites `docs/` salvo que el padre lo pida explícito.
 - Verifica tu solución ejecutándola (tests, sanity checks). Si algo contradice el
   plan, repórtalo en vez de improvisar.

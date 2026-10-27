@@ -306,39 +306,45 @@ def test_models_endpoint_contract_has_no_absolute_paths(models_dir):
     assert "/models/" not in raw
 
 
-def test_training_db_migration_adds_b3_columns_idempotently(tmp_path):
-    import sqlite3
+def test_alembic_schema_and_legacy_training_run_import(training_db):
+    """Alembic crea el esquema B3 y los runs legacy caben en JSONB."""
+    from sqlalchemy import inspect
 
-    from app.db.sqlite import get_connection
+    from app.db.engine import training_engine
+    from app.repositories import training as training_repo
 
-    db = tmp_path / "legacy.db"
-    conn = sqlite3.connect(str(db))
-    conn.executescript(
-        """
-        CREATE TABLE training_runs(
-          id INTEGER PRIMARY KEY,
-          model TEXT NOT NULL,
-          git_sha TEXT, params_json TEXT,
-          metrics_json TEXT,
-          keras_path TEXT NOT NULL,
-          created_at TEXT DEFAULT (datetime('now'))
-        );
-        INSERT INTO training_runs(model, keras_path) VALUES('extract', 'x.keras');
-        """
+    inspector = inspect(training_engine())
+    assert inspector.has_table("training_runs")
+    columns = {column["name"] for column in inspector.get_columns("training_runs")}
+    assert {
+        "id",
+        "model",
+        "git_sha",
+        "params_json",
+        "metrics_json",
+        "keras_path",
+        "tf_version",
+        "keras_version",
+        "calibration_json",
+        "created_at",
+    } <= columns
+
+    run = training_repo.create_training_run(
+        training_db,
+        model="extract",
+        keras_path="backend/models/extract-v1.keras",
+        git_sha="abc1234",
+        params_json={"seed": 1},
+        metrics_json={"val_delta_e": 3.2},
+        tf_version="2.21.0",
+        keras_version="3.15.1",
+        calibration_json={"method": "temperature", "calibrated": True},
     )
-    conn.commit()
-    conn.close()
-
-    for _ in range(2):  # idempotente
-        conn = get_connection(db)
-        try:
-            columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(training_runs)")
-            }
-            assert {"tf_version", "keras_version", "calibration_json"} <= columns
-            count = conn.execute("SELECT COUNT(*) FROM training_runs").fetchone()[0]
-            assert count == 1
-        finally:
-            conn.close()
+    training_db.commit()
+    loaded = training_repo.get_training_run(training_db, int(run.id or 0))
+    assert loaded is not None
+    assert loaded.params_json == {"seed": 1}
+    assert loaded.metrics_json == {"val_delta_e": 3.2}
+    assert loaded.calibration_json == {"method": "temperature", "calibrated": True}
 
 

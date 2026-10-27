@@ -8,9 +8,9 @@ Centraliza lo que antes vivía duplicado en ``scripts/train_extract.py``,
 Convenciones:
 
 - Todo es determinista con ``seed``; no se consulta red.
-- ``training.db`` se usa si tiene paletas; si no (o si faltan), se completa
-  con paletas sintéticas offline. El repo actual tiene la DB sin paletas, así
-  que los sets son sintéticos y reproducibles.
+- La DB de entrenamiento (PostgreSQL) se usa si tiene paletas; si no (o si
+  faltan), se completa con paletas sintéticas offline. El repo actual tiene la
+  DB sin paletas, así que los sets son sintéticos y reproducibles.
 - Las paletas de G/C son dicts ``{"hexes", "rating"?, "harmony_label"}``.
 - Numpy/pillow puro a nivel de módulo. TensorFlow y la inferencia (E) se
   importan de forma perezosa dentro de funciones.
@@ -58,7 +58,7 @@ CLASSIFY_N_TRAIN = 600
 CLASSIFY_N_VAL = 120
 CLASSIFY_N_TEST = 80
 CLASSIFY_TEST_SEED_OFFSET = 20_000
-# Partición disjunta de las paletas de `training.db` entre train/val/test. El
+# Partición disjunta de las paletas de la DB de entrenamiento entre train/val/test. El
 # barajado es fijo y cada split recibe un bucket distinto (seed % 3), así una
 # misma paleta de DB nunca aparece en dos splits.
 CLASSIFY_DB_PARTITION_SEED = 7_313
@@ -85,21 +85,21 @@ def git_sha() -> str:
 
 
 def load_extract_palettes(limit: int) -> list[list[str]]:
-    """HEX por paleta desde ``training.db`` (vacío si no hay DB/contenido)."""
-    from app.db.sqlite import get_connection
+    """HEX por paleta desde la DB de entrenamiento (vacío si no hay DB/contenido)."""
+    from sqlalchemy import select
+
+    from app.db.models import PaletteColor
+    from app.db.session import training_session
 
     try:
-        conn = get_connection()
+        with training_session() as session:
+            rows = session.execute(
+                select(PaletteColor.palette_id, PaletteColor.hex).order_by(
+                    PaletteColor.palette_id, PaletteColor.position
+                )
+            ).all()
     except Exception:
         return []
-    try:
-        rows = conn.execute(
-            "SELECT palette_id, hex FROM palette_colors ORDER BY palette_id, position"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
     palettes: list[list[str]] = []
     current: list[str] = []
     last_pid = None
@@ -192,23 +192,27 @@ def extract_eval_cases(
 
 
 def load_generate_palettes(limit: int) -> list[dict]:
-    """Paletas con rating + harmony + HEX ordenados desde ``training.db``."""
-    from app.db.sqlite import get_connection
+    """Paletas con rating + harmony + HEX ordenados desde la DB de entrenamiento."""
+    from sqlalchemy import select
+
+    from app.db.models import Palette, PaletteColor
+    from app.db.session import training_session
 
     try:
-        conn = get_connection()
+        with training_session() as session:
+            rows = session.execute(
+                select(
+                    Palette.id,
+                    Palette.rating,
+                    Palette.harmony_label,
+                    PaletteColor.position,
+                    PaletteColor.hex,
+                )
+                .join(PaletteColor, PaletteColor.palette_id == Palette.id)
+                .order_by(Palette.id, PaletteColor.position)
+            ).all()
     except Exception:
         return []
-    try:
-        rows = conn.execute(
-            "SELECT p.id, p.rating, p.harmony_label, c.position, c.hex "
-            "FROM palettes p JOIN palette_colors c ON c.palette_id=p.id "
-            "ORDER BY p.id, c.position"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
     pal_map: dict[int, dict] = {}
     for pid, rating, harmony, _pos, hexv in rows:
         if pid not in pal_map:
@@ -223,23 +227,26 @@ def load_classify_palettes(limit: int | None = None) -> list[dict]:
     ``limit=None`` carga todas: la partición disjunta de splits necesita ver
     el conjunto completo antes de repartirlo.
     """
-    from app.db.sqlite import get_connection
+    from sqlalchemy import select
+
+    from app.db.models import Palette, PaletteColor
+    from app.db.session import training_session
 
     try:
-        conn = get_connection()
+        with training_session() as session:
+            rows = session.execute(
+                select(
+                    Palette.id,
+                    Palette.harmony_label,
+                    PaletteColor.position,
+                    PaletteColor.hex,
+                )
+                .join(PaletteColor, PaletteColor.palette_id == Palette.id)
+                .where(Palette.harmony_label.in_(tuple(HARMONY_LABELS)))
+                .order_by(Palette.id, PaletteColor.position)
+            ).all()
     except Exception:
         return []
-    try:
-        rows = conn.execute(
-            "SELECT p.id, p.harmony_label, c.position, c.hex "
-            "FROM palettes p JOIN palette_colors c ON c.palette_id=p.id "
-            "WHERE p.harmony_label IN ('complementario','triada','analogo','monocromatica') "
-            "ORDER BY p.id, c.position"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
     pal_map: dict[int, dict] = {}
     for pid, harmony, _pos, hexv in rows:
         if pid not in pal_map:
@@ -386,7 +393,7 @@ def _classify_db_bucket(
 def build_classify_palette_list(n: int, seed: int) -> list[dict]:
     """Paletas etiquetadas + relleno sintético. Determinista y sin fuga.
 
-    Las paletas de ``training.db`` se cargan una vez por llamada, se barajan
+    Las paletas de la DB de entrenamiento se cargan una vez por llamada, se barajan
     con semilla fija y solo se usa el bucket ``seed % 3``. Con ello
     ``seed=42`` (train), ``seed+10000`` (val) y ``seed+20000`` (test) reciben
     paletas de DB disjuntas; el relleno sintético también usa una semilla
@@ -587,7 +594,7 @@ def split_content_hash(palettes: list[dict]) -> str:
     """Hash estable del contenido exacto de un split.
 
     Usa los HEX canónicos (mayúsculas) **en orden** más ``harmony_label`` de
-    cada paleta. Cambiar una paleta en ``training.db`` cambia el hash y, con
+    cada paleta. Cambiar una paleta en la DB de entrenamiento cambia el hash y, con
     él, la clave del ``.npz``: nunca se reutilizan features de otro contenido.
     """
     payload = [

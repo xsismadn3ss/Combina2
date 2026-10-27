@@ -95,7 +95,7 @@ def readiness_report() -> dict[str, Any]:
 
     Nunca lanza: cualquier fallo se reporta como ``loaded: false`` con un
     ``error`` breve. ``ready`` solo es ``True`` si los 3 slots activos cargan.
-    No toca ``training.db``: en runtime solo se usan ``.keras`` + manifiesto.
+    No toca la DB de entrenamiento: en runtime solo se usan ``.keras`` + manifiesto.
     """
     models: dict[str, dict[str, Any]] = {}
     for slot in READINESS_SLOTS:

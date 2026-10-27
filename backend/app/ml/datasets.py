@@ -1,6 +1,6 @@
-"""Preproceso común y helpers reutilizables del dataset (`training.db`).
+"""Preproceso común y helpers reutilizables del dataset (PostgreSQL).
 
-Fuente de verdad del esquema: `docs/data.md` (DDL) y `app/db/sqlite.py`.
+Fuente de verdad del esquema: `docs/data.md` (Alembic) y `app/db/models/`.
 Este módulo lo usan los scripts de Fase 2 (`backend/scripts/`):
 
 - `fetch_colorpedia.py` y `fetch_colourlovers.py` (fuentes públicas).
@@ -12,9 +12,9 @@ Convenciones:
   `app/ml/color_spaces.py` · normalización L∈[0,1], a/b∈[-1,1].
 - Dedup de imágenes por `sha256` (UNIQUE en `images`).
 - Dedup de paletas por `sha256` del contenido canónico
-  (`source|HEX,HEX,...` en mayúsculas): la tabla `palettes` no tiene columna
-  hash, así que la comprobación se hace en Python cargando las firmas
-  existentes una vez (`load_palette_keys`) antes de insertar en lote.
+  (`source|HEX,HEX,...` en mayúsculas): `palettes.key` es UNIQUE y el insert
+  usa `ON CONFLICT (key) DO NOTHING`; `load_palette_keys` permite además
+  deduplicar lotes en memoria sin releer la DB.
 - Split 80/10/10 estratificado por `(source, harmony_label)`, reproducible
   con semilla fija.
 """
@@ -25,11 +25,16 @@ import hashlib
 import io
 import random
 import re
-import sqlite3
 
 import numpy as np
 from PIL import Image
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
 
+from app.db.base import utcnow
+from app.db.models import Image as ImageRow
+from app.db.models import Palette, PaletteColor
 from app.ml.color_spaces import ColorConverter
 
 MAX_SIDE = 300
@@ -143,36 +148,44 @@ def preprocess_image(
 
 
 def insert_image(
-    conn: sqlite3.Connection, *, sha256: str, width: int, height: int, source: str
+    session: Session, *, sha256: str, width: int, height: int, source: str
 ) -> int | None:
     """Inserta en `images`; devuelve el id o None si ya existía (dedup)."""
     if source not in VALID_SOURCES:
         raise ValueError(f"Fuente desconocida: {source!r}")
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO images(sha256, width, height, source) VALUES(?, ?, ?, ?)",
-        (sha256, width, height, source),
+    stmt = (
+        pg_insert(ImageRow)
+        .values(
+            sha256=sha256,
+            width=width,
+            height=height,
+            source=source,
+            created_at=utcnow(),
+        )
+        .on_conflict_do_nothing(index_elements=["sha256"])
+        .returning(ImageRow.id)
     )
-    if cur.rowcount == 0:
+    row_id = session.execute(stmt).scalar_one_or_none()
+    if row_id is None:
         return None
-    return int(cur.lastrowid or 0)
+    session.flush()
+    return int(row_id)
 
 
-def load_palette_keys(conn: sqlite3.Connection) -> set[str]:
+def load_palette_keys(session: Session) -> set[str]:
     """Firmas sha256 de todas las paletas ya guardadas (para dedup en lote)."""
-    keys: set[str] = set()
-    for pid, source, hexes in _iter_palettes(conn):
-        keys.add(palette_key(source, hexes))
-    return keys
+    return {str(key) for key in session.execute(select(Palette.key)).scalars()}
 
 
-def _iter_palettes(conn: sqlite3.Connection):
-    rows = conn.execute(
-        "SELECT p.id, p.source, c.position, c.hex FROM palettes p"
-        " JOIN palette_colors c ON c.palette_id = p.id"
-        " ORDER BY p.id, c.position"
+def _iter_palettes(session: Session):
+    rows = session.execute(
+        select(Palette.id, Palette.source, PaletteColor.position, PaletteColor.hex)
+        .join(PaletteColor, PaletteColor.palette_id == Palette.id)
+        .order_by(Palette.id, PaletteColor.position)
     )
     current: tuple[int, str, list[str]] | None = None
     for pid, source, _pos, hexv in rows:
+        pid = int(pid)
         if current is None or current[0] != pid:
             if current is not None:
                 yield current[0], current[1], current[2]
@@ -184,7 +197,7 @@ def _iter_palettes(conn: sqlite3.Connection):
 
 
 def insert_palette(
-    conn: sqlite3.Connection,
+    session: Session,
     *,
     source: str,
     hexes: list[str],
@@ -195,7 +208,8 @@ def insert_palette(
     """Inserta una paleta + sus colores Lab; None si duplicada (idempotente).
 
     Si se pasa `existing_keys` (de `load_palette_keys`) se usa y actualiza
-    en sitio para insertar lotes sin releer la DB.
+    en sitio para insertar lotes sin releer la DB. El UNIQUE de `palettes.key`
+    + `ON CONFLICT DO NOTHING` cubre también carreras entre procesos.
     """
     if source not in VALID_SOURCES:
         raise ValueError(f"Fuente desconocida: {source!r}")
@@ -205,36 +219,55 @@ def insert_palette(
         raise ValueError("La paleta no tiene colores")
     norm = [normalize_hex(h) for h in hexes]
     key = palette_key(source, norm)
-    if existing_keys is not None:
-        if key in existing_keys:
-            return None
-    else:
-        if key in load_palette_keys(conn):
-            return None
-    cur = conn.execute(
-        "INSERT INTO palettes(source, rating, harmony_label) VALUES(?, ?, ?)",
-        (source, rating, harmony_label),
+    if existing_keys is not None and key in existing_keys:
+        return None
+    stmt = (
+        pg_insert(Palette)
+        .values(
+            key=key,
+            source=source,
+            rating=rating,
+            harmony_label=harmony_label,
+            created_at=utcnow(),
+        )
+        .on_conflict_do_nothing(index_elements=["key"])
+        .returning(Palette.id)
     )
-    pid = int(cur.lastrowid or 0)
+    row_id = session.execute(stmt).scalar_one_or_none()
+    if row_id is None:
+        return None
+    pid = int(row_id)
+    colors = []
     for pos, hexv in enumerate(norm):
         lab = ColorConverter.hex_to_lab(hexv)
-        conn.execute(
-            "INSERT INTO palette_colors(palette_id, position, hex, l, a, b)"
-            " VALUES(?, ?, ?, ?, ?, ?)",
-            (pid, pos, hexv, lab[0], lab[1], lab[2]),
+        colors.append(
+            {
+                "palette_id": pid,
+                "position": pos,
+                "hex": hexv,
+                "l": lab[0],
+                "a": lab[1],
+                "b": lab[2],
+            }
         )
+    session.execute(pg_insert(PaletteColor), colors)
+    session.flush()
     if existing_keys is not None:
         existing_keys.add(key)
     return pid
 
 
-def count_palettes_by_source(conn: sqlite3.Connection) -> dict[str, int]:
-    return {
-        row[0]: row[1]
-        for row in conn.execute(
-            "SELECT source, COUNT(*) FROM palettes GROUP BY source"
-        ).fetchall()
-    }
+def count_palettes_by_source(session: Session) -> dict[str, int]:
+    rows = session.execute(
+        select(Palette.source, func.count()).group_by(Palette.source)
+    )
+    return {str(source): int(count) for source, count in rows}
+
+
+def count_palettes(session: Session) -> int:
+    return int(
+        session.execute(select(func.count()).select_from(Palette)).scalar_one()
+    )
 
 
 # --- Mosaicos sintéticos para la red E (Fase 3) ---------------------------------
@@ -309,14 +342,12 @@ def synthesize_mosaic(
 # --- Split estratificado reproducible -----------------------------------------
 
 
-def fetch_palette_strata(conn: sqlite3.Connection) -> list[tuple[int, str, str]]:
+def fetch_palette_strata(session: Session) -> list[tuple[int, str, str]]:
     """Lista (id, source, harmony_label|'' ) de todas las paletas."""
-    return [
-        (row[0], row[1], row[2] or "")
-        for row in conn.execute(
-            "SELECT id, source, harmony_label FROM palettes"
-        ).fetchall()
-    ]
+    rows = session.execute(
+        select(Palette.id, Palette.source, Palette.harmony_label).order_by(Palette.id)
+    )
+    return [(int(pid), source, harmony or "") for pid, source, harmony in rows]
 
 
 def stratified_split(
@@ -350,11 +381,14 @@ def stratified_split(
 
 
 def palette_splits(
-    conn: sqlite3.Connection,
+    session: Session,
     *,
     ratios: tuple[float, float, float] = SPLIT_RATIOS,
     seed: int = 42,
 ) -> dict[str, list[int]]:
     """Split 80/10/10 de la DB estratificado por (source, harmony_label)."""
-    strata = [(pid, f"{src}\x00{lab}") for pid, src, lab in fetch_palette_strata(conn)]
+    strata = [
+        (pid, f"{src}\x00{lab}")
+        for pid, src, lab in fetch_palette_strata(session)
+    ]
     return stratified_split(strata, ratios=ratios, seed=seed)

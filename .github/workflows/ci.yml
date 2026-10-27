@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    # Cualquier rama (incluida 22-combina2) para que el CI corra antes del PR.
+    # Cualquier rama (incluida 28-combina2) para que el CI corra antes del PR.
     branches: ["**"]
   pull_request:
     branches: [main]
@@ -19,10 +19,31 @@ jobs:
   backend-runtime:
     name: Backend runtime (Python 3.14, sin TF)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: combina2
+          POSTGRES_PASSWORD: combina2
+          POSTGRES_DB: combina2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U combina2 -d combina2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2_test
+      TRAINING_DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2_training_test
+      FEEDBACK_EXPORT_TOKEN: ci-export-token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
+          # psycopg[binary] 3.3.x publica wheel cp314 (verificado). Si en el
+          # futuro no la hubiera, bajar este job a 3.13 sin tocar
+          # requires-python (>=3.12).
           python-version: "3.14"
           cache: pip
           cache-dependency-path: backend/pyproject.toml
@@ -31,6 +52,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
+      - name: Crear y migrar bases (Alembic)
+        working-directory: backend
+        run: python scripts/db_bootstrap.py --target all --create --upgrade
       - name: Tests (modelos NN hacen skip sin TF)
         working-directory: backend
         run: python -m pytest tests -q
@@ -38,6 +62,24 @@ jobs:
   backend-ml:
     name: Backend ML (Python 3.12, TF 2.21)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: combina2
+          POSTGRES_PASSWORD: combina2
+          POSTGRES_DB: combina2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U combina2 -d combina2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2_test
+      TRAINING_DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2_training_test
+      FEEDBACK_EXPORT_TOKEN: ci-export-token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,6 +91,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements-ml.txt
+      - name: Crear y migrar bases (Alembic)
+        working-directory: backend
+        run: python scripts/db_bootstrap.py --target all --create --upgrade
       - name: Tests completos
         working-directory: backend
         run: python -m pytest tests -q
@@ -72,6 +117,93 @@ jobs:
             backend/eval-report.json
             backend/eval-report.md
           if-no-files-found: warn
+
+  persistence:
+    name: Postgres persistencia (compose restart)
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: combina2
+      POSTGRES_PASSWORD: combina2
+      POSTGRES_DB: combina2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Instalar runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ./backend
+      - name: Arrancar Postgres (compose)
+        run: docker compose up -d postgres
+      - name: Esperar healthy
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U combina2 -d combina2; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs postgres
+          exit 1
+      - name: Bootstrap (crear + migrar)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2
+          TRAINING_DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2_training
+        run: python scripts/db_bootstrap.py --target runtime --create --upgrade
+      - name: Insertar fila
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2
+        run: |
+          python - <<'PY'
+          from app.db.session import runtime_session
+          from app.repositories import feedback as repo
+
+          with runtime_session() as session:
+              repo.insert_feedback(
+                  session,
+                  palette_json={"type": "triada", "colors": [{"value": "#123456", "role": "primary"}]},
+                  accepted=True,
+                  score=0.5,
+                  image_sha256=None,
+              )
+          print("fila insertada")
+          PY
+      - name: Reiniciar Postgres
+        run: docker compose restart postgres
+      - name: Esperar healthy tras reinicio
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U combina2 -d combina2; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs postgres
+          exit 1
+      - name: Verificar que la fila sobrevive
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://combina2:combina2@localhost:5432/combina2
+        run: |
+          python - <<'PY'
+          from sqlalchemy import func, select
+
+          from app.db.models import Feedback
+          from app.db.session import runtime_session
+
+          with runtime_session() as session:
+              count = session.execute(select(func.count()).select_from(Feedback)).scalar_one()
+          assert count == 1, f"se esperaba 1 fila, hay {count}"
+          print(f"OK: {count} fila sobrevive al restart")
+          PY
+      - name: Parar compose
+        if: always()
+        run: docker compose down -v
 
   web:
     name: Web (Node 22)

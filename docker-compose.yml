@@ -1,4 +1,31 @@
 services:
+  postgres:
+    container_name: combina2-postgres
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-combina2}
+      # Obligatoria: sin ella compose falla antes de arrancar (evita defaults
+      # débiles en entornos compartidos).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatoria (ver .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:-combina2}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - combina2-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-combina2} -d ${POSTGRES_DB:-combina2}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - combina2
+
   backend:
     container_name: combina2-backend
     build:
@@ -7,12 +34,22 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    environment:
+      # Dentro de la red de compose el host es `postgres`, no localhost.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-combina2}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-combina2}
+      # Los scripts de entrenamiento no se ejecutan en este contenedor; la
+      # variable se pasa igualmente para tener un único contrato.
+      TRAINING_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-combina2}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_TRAINING_DB:-combina2_training}
+      FEEDBACK_EXPORT_TOKEN: ${FEEDBACK_EXPORT_TOKEN:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
       interval: 10s
       timeout: 30s
       retries: 6
       start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - combina2
 
@@ -38,3 +75,7 @@ networks:
   combina2:
     name: combina2
     driver: bridge
+
+volumes:
+  combina2-pgdata:
+    name: combina2-pgdata

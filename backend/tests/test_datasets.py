@@ -4,8 +4,10 @@ import re
 
 import pytest
 from PIL import Image
+from sqlalchemy import select
 
-from app.db.sqlite import get_connection
+from app.db.models import Palette, PaletteColor
+from app.db.session import training_session
 from app.ml.datasets import (
     VALID_HARMONY_LABELS,
     palette_splits,
@@ -16,42 +18,33 @@ from scripts.make_synthetic import run as synthetic_run
 HEX_RE = re.compile(r"^#[0-9A-F]{6}$")
 
 
-@pytest.fixture()
-def training_db(tmp_path, monkeypatch):
-    db = tmp_path / "phase2.db"
-    monkeypatch.setenv("TRAINING_DB", str(db))
-    return db
+def _palettes():
+    with training_session() as session:
+        return list(session.execute(select(Palette).order_by(Palette.id)).scalars())
 
 
-def _palettes(conn):
-    return conn.execute(
-        "SELECT id, source, harmony_label FROM palettes"
-    ).fetchall()
-
-
-def test_synthetic_generates_valid_labeled_palettes(training_db):
+def test_synthetic_generates_valid_labeled_palettes(_clean_database):
     report = synthetic_run(n=200, seed=7)
     assert report["inserted"] == 200
     assert report["total_palettes"] == 200
-    conn = get_connection()
-    try:
-        rows = _palettes(conn)
-        assert len(rows) == 200
-        assert {r["source"] for r in rows} == {"synthetic"}
-        assert set(r["harmony_label"] for r in rows) <= VALID_HARMONY_LABELS
-        assert set(r["harmony_label"] for r in rows) == VALID_HARMONY_LABELS
-        for row in rows:
-            colors = conn.execute(
-                "SELECT hex, l, a, b FROM palette_colors WHERE palette_id=? ORDER BY position",
-                (row["id"],),
-            ).fetchall()
+    palettes = _palettes()
+    assert len(palettes) == 200
+    assert {row.source for row in palettes} == {"synthetic"}
+    assert {row.harmony_label for row in palettes} == VALID_HARMONY_LABELS
+    with training_session() as session:
+        for row in palettes:
+            colors = list(
+                session.execute(
+                    select(PaletteColor)
+                    .where(PaletteColor.palette_id == row.id)
+                    .order_by(PaletteColor.position)
+                ).scalars()
+            )
             assert len(colors) == 5
-            assert all(HEX_RE.match(c["hex"]) for c in colors)
-    finally:
-        conn.close()
+            assert all(HEX_RE.match(color.hex) for color in colors)
 
 
-def test_synthetic_rerun_is_idempotent(training_db):
+def test_synthetic_rerun_is_idempotent(_clean_database):
     first = synthetic_run(n=200, seed=7)
     second = synthetic_run(n=200, seed=7)
     assert first["inserted"] == 200
@@ -60,16 +53,13 @@ def test_synthetic_rerun_is_idempotent(training_db):
     assert second["total_palettes"] == 200
 
 
-def test_split_sums_100_percent_and_is_reproducible(training_db):
+def test_split_sums_100_percent_and_is_reproducible(_clean_database):
     synthetic_run(n=400, seed=11)
-    conn = get_connection()
-    try:
-        total = int(conn.execute("SELECT COUNT(*) FROM palettes").fetchone()[0])
+    with training_session() as session:
+        total = len(list(session.execute(select(Palette.id)).scalars()))
         assert total == 400
-        first = palette_splits(conn)
-        second = palette_splits(conn)
-    finally:
-        conn.close()
+        first = palette_splits(session)
+        second = palette_splits(session)
     assert first == second  # reproducible
     sizes = {k: len(v) for k, v in first.items()}
     assert sum(sizes.values()) == total  # suma el 100%

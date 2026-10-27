@@ -1,4 +1,5 @@
 from enum import Enum
+import re
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -143,8 +144,21 @@ class FeedbackRequest(BaseModel):
     accepted: bool
     score: float | None = Field(default=None, ge=0.0, le=1.0)
     imageSha256: str | None = Field(
-        default=None, description="SHA-256 de la imagen origen, si la hubo."
+        default=None,
+        description=(
+            "SHA-256 de la imagen origen, si la hubo (64 hex). Se normaliza a "
+            "minúsculas para cumplir el CHECK de PostgreSQL."
+        ),
     )
+
+    @field_validator("imageSha256")
+    @classmethod
+    def _validate_image_sha256(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+            raise ValueError("imageSha256 debe ser un SHA-256 hexadecimal de 64 caracteres")
+        return value.lower()
 
 
 class FeedbackResponse(BaseModel):

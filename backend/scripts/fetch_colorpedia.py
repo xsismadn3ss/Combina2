@@ -9,8 +9,8 @@ e inserta 0 filas con código de salida 0 (sigue el resto del pipeline).
 Requiere `pyarrow` (ver `backend/pyproject.toml`).
 
 Uso:
-    backend/.venv/bin/python backend/scripts/fetch_colorpedia.py
-    TRAINING_DB=/tmp/t.db backend/.venv/bin/python backend/scripts/fetch_colorpedia.py --limit 200
+    python scripts/fetch_colorpedia.py
+    TRAINING_DATABASE_URL=postgresql+psycopg://.../t python scripts/fetch_colorpedia.py --limit 200
 """
 
 from __future__ import annotations
@@ -24,8 +24,11 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app.db.sqlite import get_connection, get_db_path  # noqa: E402
+from app.config import training_database_url  # noqa: E402
+from app.db.engine import sanitized_url  # noqa: E402
+from app.db.session import training_session  # noqa: E402
 from app.ml.datasets import (  # noqa: E402
+    count_palettes,
     count_palettes_by_source,
     insert_palette,
     load_palette_keys,
@@ -34,6 +37,7 @@ from app.ml.datasets import (  # noqa: E402
 
 SOURCE = "colorpedia"
 CHUNK = 5
+BATCH_SIZE = 200  # commit por lote (no una transacción gigante)
 TIMEOUT = 120
 URLS = [
     "https://huggingface.co/datasets/boltuix/color-pedia/resolve/main/color_pedia.parquet",
@@ -107,7 +111,7 @@ def run(limit: int | None = None) -> dict:
         import pyarrow  # noqa: F401
     except ImportError:
         return {
-            "db": str(get_db_path()),
+            "db": sanitized_url(training_database_url()),
             "inserted": 0,
             "skipped_duplicates_or_invalid": 0,
             "colors_seen": 0,
@@ -115,36 +119,32 @@ def run(limit: int | None = None) -> dict:
             "by_source": {},
             "total_palettes": 0,
         }
-    conn = get_connection()
-    try:
-        existing = load_palette_keys(conn)
+    with training_session() as session:
+        existing = load_palette_keys(session)
         with tempfile.TemporaryDirectory(prefix="colorpedia-") as tmp:
             dest = Path(tmp) / "color_pedia.parquet"
             try:
                 used_url = download(URLS, dest)
             except RuntimeError as exc:
                 return {
-                    "db": str(get_db_path()),
+                    "db": sanitized_url(training_database_url()),
                     "inserted": 0,
                     "skipped_duplicates_or_invalid": 0,
                     "colors_seen": 0,
                     "error": str(exc),
-                    "by_source": count_palettes_by_source(conn),
-                    "total_palettes": int(
-                        conn.execute("SELECT COUNT(*) FROM palettes").fetchone()[0]
-                    ),
+                    "by_source": count_palettes_by_source(session),
+                    "total_palettes": count_palettes(session),
                 }
             inserted = 0
             skipped = 0
             colors_seen = 0
             chunk: list[str] = []
-            stop = False
             for hexv in iter_color_hexes(dest):
                 colors_seen += 1
                 chunk.append(hexv)
                 if len(chunk) == CHUNK:
                     pid = insert_palette(
-                        conn,
+                        session,
                         source=SOURCE,
                         hexes=list(chunk),
                         rating=None,
@@ -155,19 +155,16 @@ def run(limit: int | None = None) -> dict:
                         skipped += 1
                     else:
                         inserted += 1
+                        if inserted % BATCH_SIZE == 0:
+                            session.commit()
                     chunk = []
                     if limit is not None and inserted + skipped >= limit:
-                        stop = True
                         break
-            if stop:
-                pass
-            conn.commit()
-            by_source = count_palettes_by_source(conn)
-            total = int(conn.execute("SELECT COUNT(*) FROM palettes").fetchone()[0])
-    finally:
-        conn.close()
+            session.commit()
+            by_source = count_palettes_by_source(session)
+            total = count_palettes(session)
     return {
-        "db": str(get_db_path()),
+        "db": sanitized_url(training_database_url()),
         "url": used_url,
         "colors_seen": colors_seen,
         "inserted": inserted,

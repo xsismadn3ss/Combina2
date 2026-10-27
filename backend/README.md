@@ -1,20 +1,42 @@
-# Combina2 backend (Fase 6 — issue #22)
+# Combina2 backend (Fase 7 — issues #22/#28)
 
 FastAPI + TensorFlow. Estado: redes **E/G/C activas** en `models/manifest.json`
 (`extract-v1`, `generate-v1`, `classify-v2`), con calibración de C y registro de
-versiones/rollback en `/api/v1/models`. Si TF o un `.keras` no están disponibles,
+versiones/rollback en `/api/v1/models`. El feedback y los datos de
+entrenamiento viven en **PostgreSQL**. Si TF o un `.keras` no están disponibles,
 la API responde por el **fallback clásico** (`fallback: true`) sin caerse.
 
-## Correr
+## Quickstart (Postgres local + venv)
 
 ```bash
-uv venv .venv && uv pip install -e .          # runtime (sin TF): API + fallback
-uvicorn app.main:app --reload                # desde backend/
-pytest                                        # tests de contrato
+# 1) Desde la RAÍZ del repo: Postgres en Docker (.env vive en la raíz)
+cp .env.example .env          # solo la primera vez
+docker compose up -d postgres
+
+# 2) Runtime sin TF (desde backend/)
+cd backend
+uv venv .venv && uv pip install -e .
+.venv/bin/python scripts/db_bootstrap.py --target all --create --upgrade
+.venv/bin/python -m pytest tests -q          # requiere Postgres real
+.venv/bin/uvicorn app.main:app --reload
 ```
 
-`TRAINING_DB` (opcional): ruta del sqlite. Defecto: `backend/training.db`
-(versionado como evidencia de runs/feedback; excepción de `.gitignore`).
+En Windows los venvs están en `backend\.venv\Scripts\python.exe` y
+`backend\.venv-tf\Scripts\python.exe`.
+
+Variables (ver `.env.example`):
+
+| Variable | Uso |
+|---|---|
+| `DATABASE_URL` | DB de runtime (feedback). Default local `combina2`. |
+| `TRAINING_DATABASE_URL` | DB de entrenamiento (paletas, runs, feedback importado). **No se define en producción.** |
+| `FEEDBACK_EXPORT_TOKEN` | Bearer de `GET /api/v1/feedback/export.csv` (vacío ⇒ 404). |
+| `DB_CONNECT_TIMEOUT` | Timeout de conexión en segundos (default 5). |
+| `IDENTIFY_MIN_CONFIDENCE` | Umbral de `/identify` (default 0.70). |
+
+`backend/training.db` (SQLite) se conserva como evidencia histórica y está
+**deprecado**: ningún código de `app/` lo usa. Migración one-shot:
+`python scripts/migrate_sqlite_to_postgres.py --sqlite training.db --apply`.
 
 ## Venvs: runtime vs entrenamiento
 
@@ -25,7 +47,7 @@ TensorFlow** para cargar las redes E/G/C; localmente hay dos venvs:
 | venv | Python | Paquetes | Uso |
 |---|---|---|---|
 | `backend/.venv` | 3.14 | runtime **sin TF** (`-e .`) | API, `pytest` (sin TF hay fallback) |
-| `backend/.venv-tf` | 3.12 | `tensorflow-cpu` + `numpy` + `pillow` + `scikit-learn` (+ deps de API para tests) | **entrenamiento, eval e inferencia real**: `scripts/train_*.py`, `python -m eval.run_eval` |
+| `backend/.venv-tf` | 3.12 | `tensorflow-cpu` + deps de API y DB | **entrenamiento, eval e inferencia real**: `scripts/train_*.py`, `python -m eval.run_eval` |
 
 ```bash
 uv venv backend/.venv-tf --python 3.12
@@ -39,26 +61,44 @@ Python 3.12 e instala el extra `.[ml]` (`tensorflow-cpu==2.21.0`,
 `keras==3.15.1`), por lo que en Railway las redes cargan de verdad; si TF o un
 `.keras` faltan, la API sigue respondiendo por el fallback clásico.
 
-(`pyproject.toml` exige `>=3.12`, así que en `.venv-tf` también podría usarse
-`-e .`; los tests corren igual por `pythonpath = ["."]`.)
-Ambos venvs están gitignored; los `.keras` de `backend/models/` **sí** se
-versionan.
+`psycopg[binary]` 3.3.x publica wheels para 3.12/3.13/3.14, así que la capa de
+datos es idéntica en los dos venvs y en CI. Ambos venvs están gitignored; los
+`.keras` de `backend/models/` **sí** se versionan.
 
 ## Endpoints (`/api/v1`)
 
 | Método | Ruta | Motor hoy |
 |---|---|---|
-| GET | `/health` | liveness (200, sin cargar modelos) |
-| GET | `/ready` | readiness real de E/G/C (200/503; `storage: models_only`) |
+| GET | `/health` | liveness (200, sin cargar modelos ni DB) |
+| GET | `/ready` | readiness real de E/G/C (200/503; `storage: models_only` + `database` informativo) |
 | GET | `/harmony`, `/colors/roles` | enums |
 | GET | `/models` | registro read-only desde `models/manifest.json` (sin TF) |
 | POST | `/palette/extract` | red E; fallback KMeans clásico si E no está disponible |
-| POST | `/palette/generate` | red G + condicionamiento armónico con `topK` (`harmony` null/omitido = rotación determinista de las 4 armonías); fallback HSL |
+| POST | `/palette/generate` | red G + condicionamiento armónico con `topK`; fallback HSL |
 | POST | `/palette/identify` | pipeline E→C con calibración; fallback `predominant` |
-| POST | `/feedback` | persiste en sqlite |
+| POST | `/feedback` | persiste snapshot en PostgreSQL (503 si la DB cae) |
+| GET | `/feedback/export.csv` | CSV protegido con Bearer (`FEEDBACK_EXPORT_TOKEN`) |
 
-Contratos: [`../docs/api.md`](../docs/api.md). Modelos: [`models/README.md`](models/README.md).
+Contratos: [`../docs/api.md`](../docs/api.md). Datos y migraciones:
+[`../docs/data.md`](../docs/data.md). Modelos: [`models/README.md`](models/README.md).
 Despliegue en Railway: [`../docs/deployment.md`](../docs/deployment.md).
+
+## Base de datos
+
+- SQLModel + SQLAlchemy 2 sync + psycopg 3; engines con `pool_pre_ping`.
+- Un único conjunto de migraciones Alembic crea el esquema completo en las dos
+  bases (`alembic upgrade head`, advisory lock, idempotente).
+- `python scripts/db_bootstrap.py --target all --create --upgrade` crea y migra
+  local/CI. En Railway el pre-deploy es `alembic upgrade head` con
+  `DATABASE_URL`.
+- Export/import/purga:
+
+  ```bash
+  python scripts/export_feedback_csv.py --output feedback.csv
+  python scripts/import_feedback_csv.py --input feedback.csv --dry-run
+  python scripts/import_feedback_csv.py --input feedback.csv --apply
+  python scripts/purge_feedback.py --before 2025-01-01 --apply
+  ```
 
 ## Evaluación (E/G/C) y gates
 
@@ -77,33 +117,30 @@ python -m eval.run_eval --strict --check-manifest \
   (10 mosaicos, seeds 5000..5009).
 - `generate`: predicción cruda de G (40 paletas seed 99) con CIEDE2000 real.
 - `classify`: pipeline E→C con `inference.identify_image` sobre el split test
-  de 80 paletas; incluye calibración aplicada (ECE/NLL antes/después y gates
-  `calibration/ece` y `calibration/nll` solo si `calibrated:true`).
+  de 80 paletas; incluye calibración aplicada y gates `calibration/ece`/`nll`.
 - `--check-manifest`: compara lo medido con `models/manifest.json` (tolerancia
   10%; bajo `--strict` un drift falla).
 - Sin TF: slots `skipped`, exit 0 salvo `--strict`.
+- Con la DB de entrenamiento vacía, los sets usan el relleno sintético
+  determinista (la línea base histórica).
 
 ## Calibración (B2)
 
 ```bash
-# desde backend/ con .venv-tf (TF 2.21 / Keras 3.15)
 .venv-tf/Scripts/python.exe scripts/calibrate.py --slot all
 .venv-tf/Scripts/python.exe scripts/calibrate.py --slot classify --dry-run
 .venv-tf/Scripts/python.exe scripts/calibrate.py --slot generate --source auto
 ```
 
 - `classify`: ajusta la temperatura **solo con el split de validación**
-  (120 paletas, seed 10042), imprime ECE/NLL antes/después (val y test como
-  referencia) y escribe `calibration` en el manifiesto. Con `--dry-run` no
-  escribe nada.
-- `generate`: usa feedback real si hay ≥ 50 filas; si no, el proxy de
-  reconstrucción (40 paletas seed 99, buena = CIE76 ≤ 14). Rechaza Platt si
-  AUC < `calibration.require_auc_min` (0.55) y deja `calibrated:false` con
-  motivo; no invierte el score.
+  (120 paletas, seed 10042) y escribe `calibration` en el manifiesto.
+- `generate`: usa feedback real de la DB de entrenamiento si hay ≥ 50 filas; si
+  no, el proxy de reconstrucción (40 paletas seed 99). Rechaza Platt si
+  AUC < 0.55 y no invierte el score.
 - `/identify` expone `confidenceCalibrated`, `needsRetry` y `suggestion`.
-  `IDENTIFY_MIN_CONFIDENCE` (default **0.70**) controla cuándo se pide otra
-  foto; justificación risk-coverage en `../docs/api.md`.
 
 CI (`.github/workflows/ci.yml`): `backend-runtime` (3.14, sin TF),
-`backend-ml` (3.12, tests completos + eval estricta + artefactos) y `web`
-(Node 22: lint/typecheck/build).
+`backend-ml` (3.12, tests completos + eval estricta + artefactos),
+`persistence` (Postgres de compose sobrevive a un restart) y `web`
+(Node 22: lint/typecheck/build). Ambos jobs de backend usan un service
+container `postgres:17` real y `scripts/db_bootstrap.py`.

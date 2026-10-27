@@ -52,8 +52,8 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
   `MAX_SIZE=300`, `RANDOM_STATE=42`, `N_INIT=10`) sobre mosaicos sintéticos
   `datasets.synthesize_mosaic` (franjas con áreas `Dirichlet`, ruido luz
   `gain∈[0.95,1.05]` + gaussiano σ=3, recompresión JPEG `quality 60-95`,
-  600 train / 120 val / 24 test por defecto) + paletas `training.db`
-  (si no alcanzan, relleno aleatorio offline determinista). Init de
+  600 train / 120 val / 24 test por defecto) + paletas de la DB de
+  entrenamiento (si no alcanzan, relleno aleatorio offline determinista). Init de
   prototipos: MLP con identidad escalada + KMeans en features; reanimación
   de clusters muertos cada 4 épocas.
 
@@ -114,7 +114,7 @@ Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
 - **Loss:** cross-entropy + label smoothing 0.05.
 - **Eval B1:** `pipeline` E→C sobre el split de test de **80 paletas**
   (seed 20042; train 600 seed 42, val 120 seed 10042). Los splits son
-  **disjuntos**: las paletas de `training.db` se reparten de forma
+  **disjuntos**: las paletas de la DB de entrenamiento se reparten de forma
   **estratificada por `harmony_label`** (80/10/10 con semilla fija) en tres
   buckets, y el split de test usa siempre el bucket de test (índice 2), por lo
   que cualquier `test_seed` queda fuera de los buckets de train/val. Con al
@@ -186,7 +186,7 @@ La caché de features de evaluación (`.eval-cache/`, gitignored) incluye en su
 clave la **versión y los 8 primeros hex del sha256 de la E resuelta**
 (`extract_cache_tag`) y un **hash del contenido exacto del split**
 (`split_content_hash`: HEX canónicos en orden + `harmony_label`). Reentrenar o
-activar otra E, o cambiar las paletas de `training.db`, invalida automáticamente
+activar otra E, o cambiar las paletas de la DB de entrenamiento, invalida automáticamente
 las features guardadas en lugar de reutilizar las de otro contenido.
 
 ```json

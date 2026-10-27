@@ -1,10 +1,11 @@
 # Entorno ML (CI `backend-ml` y `.venv-tf` local).
 #
 # ¿Por qué Python 3.12 y no 3.14?
-# - `backend/pyproject.toml` exige `requires-python >=3.14` para el runtime.
 # - TensorFlow estable 2.21.0 no publica wheel `cp314`; el runtime 3.14 se
 #   queda sin TF y usa el fallback clásico (los tests de modelo hacen skip).
 # - Para entrenar/evaluar las redes se usa este requirements en Python 3.12.
+# - `psycopg[binary]` SÍ tiene wheel para 3.12/3.13/3.14, así que la capa de
+#   datos es la misma en ambos jobs.
 #
 # `tensorflow-cpu` sí tiene wheel cp312 para Linux/macOS/Windows (verificado
 # en PyPI para 2.21.0). En el venv local de Windows hay `tensorflow` completo,
@@ -21,3 +22,10 @@ pytest==9.1.1
 python-multipart==0.0.32
 uvicorn==0.52.4
 pyarrow==26.0.0
+# Capa de datos PostgreSQL (issue #28). `backend-ml` instala SOLO este archivo
+# (no `-e .`), así que las dependencias del runtime deben estar duplicadas aquí.
+SQLAlchemy==2.1.6
+sqlmodel==0.0.48
+alembic==1.20.1
+psycopg[binary]==3.3.6
+python-dotenv==1.2.4

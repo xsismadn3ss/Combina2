@@ -1,23 +1,17 @@
 # Tests de contrato Fase 1 (issue #17): la API responde vía fallback clásico.
 import io
-import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import select
 
 from app.config import APICOnfig
+from app.db.models import Feedback
 from app.main import app
 from app.schemas.palette import ColorRole, HarmonyType
 
 client = TestClient(app)
-
-
-@pytest.fixture()
-def training_db(tmp_path, monkeypatch):
-    db = tmp_path / "test-training.db"
-    monkeypatch.setenv("TRAINING_DB", str(db))
-    return db
 
 
 def _png_bytes(color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
@@ -224,7 +218,7 @@ def test_corrupt_image_is_client_error_not_server_error(endpoint):
     assert response.status_code == 400
 
 
-def test_feedback_persists_row(training_db):
+def test_feedback_persists_row(runtime_db):
     payload = {
         "palette": {
             "type": HarmonyType.COMPLEMENTARY.value,
@@ -240,10 +234,10 @@ def test_feedback_persists_row(training_db):
     response = client.post(f"{APICOnfig.prefix}/feedback", json=payload)
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-    conn = sqlite3.connect(str(training_db))
-    row = conn.execute("SELECT accepted, score FROM feedback").fetchone()
-    conn.close()
-    assert tuple(row) == (1, 0.9)
+    row = runtime_db.execute(select(Feedback)).scalars().one()
+    assert row.accepted is True
+    assert row.score == pytest.approx(0.9)
+    assert row.palette_type == HarmonyType.COMPLEMENTARY.value
 
 
 @pytest.mark.parametrize(
@@ -266,7 +260,7 @@ def test_feedback_persists_row(training_db):
         ),
     ],
 )
-def test_feedback_accepts_null_or_missing_palette_fallback(training_db, palette):
+def test_feedback_accepts_null_or_missing_palette_fallback(palette):
     response = client.post(
         f"{APICOnfig.prefix}/feedback",
         json={"palette": palette, "accepted": True, "score": 0.9},
@@ -275,7 +269,7 @@ def test_feedback_accepts_null_or_missing_palette_fallback(training_db, palette)
     assert response.json() == {"ok": True}
 
 
-def test_feedback_requires_accepted(training_db):
+def test_feedback_requires_accepted():
     response = client.post(
         f"{APICOnfig.prefix}/feedback",
         json={
