@@ -62,7 +62,10 @@ Python 3.12 e instala el extra `.[ml]` (`tensorflow-cpu==2.21.0`,
 `.keras` faltan, la API sigue respondiendo por el fallback clásico.
 
 `psycopg[binary]` 3.3.x publica wheels para 3.12/3.13/3.14, así que la capa de
-datos es idéntica en los dos venvs y en CI. Ambos venvs están gitignored; los
+datos local/CI es idéntica en los dos venvs. En Railway el runtime usa
+**pg8000** (Python puro) porque psycopg binario + TensorFlow provoca un
+segfault nativo en Linux; `normalize_database_url` convierte la URL de Railway
+a `postgresql+pg8000://` automáticamente. Ambos venvs están gitignored; los
 `.keras` de `backend/models/` **sí** se versionan.
 
 ## Endpoints (`/api/v1`)
@@ -85,7 +88,8 @@ Despliegue en Railway: [`../docs/deployment.md`](../docs/deployment.md).
 
 ## Base de datos
 
-- SQLModel + SQLAlchemy 2 sync + psycopg 3; engines con `pool_pre_ping`.
+- SQLModel + SQLAlchemy 2 sync; pg8000 en runtime Railway y psycopg 3 en
+  scripts/tests locales; engines con `pool_pre_ping`.
 - Un único conjunto de migraciones Alembic crea el esquema completo en las dos
   bases (`alembic upgrade head`, advisory lock, idempotente).
 - `python scripts/db_bootstrap.py --target all --create --upgrade` crea y migra

@@ -13,7 +13,7 @@ navegador
    ▼
 [backend] FastAPI + TensorFlow (privado, puerto 8000)
    │  /app/models/*.keras + manifest.json   (solo artefactos)
-   │  DATABASE_URL (psycopg)
+   │  DATABASE_URL (pg8000)
    ▼
 [Postgres] (solo feedback de runtime; datos de entrenamiento NO van a prod)
 ```
@@ -75,7 +75,7 @@ de reinicio), no en `railway.toml`.
 | Variable | Valor | Notas |
 |---|---|---|
 | `PORT` | inyectada por Railway | El `CMD` expande `${PORT:-8000}`. |
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Plugin Postgres de Railway (`postgresql://...`). **El backend normaliza el esquema** a `postgresql+psycopg://` (`normalize_database_url`), también si llega como `postgres://`. **Obligatoria** para el feedback. |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Plugin Postgres de Railway (`postgresql://...`). **El backend normaliza el esquema** a `postgresql+pg8000://` (`normalize_database_url`), también si llega como `postgres://`. Se usa pg8000 en runtime para evitar el segfault de psycopg binario con TensorFlow en Linux. **Obligatoria** para el feedback. |
 | `FEEDBACK_EXPORT_TOKEN` | secreto largo | Bearer de `GET /api/v1/feedback/export.csv`. Si falta, el endpoint responde 404. |
 | `IDENTIFY_MIN_CONFIDENCE` | opcional, default `0.70` | Umbral de `/identify` para `needsRetry`. |
 | `TF_CPP_MIN_LOG_LEVEL` | `3` | Ya fijada en la imagen; reduce ruido de TF. |
@@ -154,8 +154,9 @@ preview queda cacheado, fuerza un nuevo scrape en la herramienta.
 ## Backups, restore y export
 
 > `pg_dump`/`pg_restore` hablan libpq: usan `postgresql://...`, **no** el
-> esquema `postgresql+psycopg://...` de SQLAlchemy. Si copias la URL local de
-> `.env`, quita el sufijo `+psycopg`:
+> esquema `postgresql+pg8000://...` ni `postgresql+psycopg://...` de SQLAlchemy.
+> Si copias la URL local de `.env`, quita el sufijo `+psycopg`; si vienes del
+> backend, quita `+pg8000`:
 >
 > ```bash
 > PG_URL="${DATABASE_URL/postgresql+psycopg:/postgresql:}"

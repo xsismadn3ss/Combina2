@@ -21,8 +21,11 @@ abre el archivo en modo read-only).
 
 ## 1. Capa de datos
 
-- **SQLModel + SQLAlchemy 2 sync + psycopg 3** (`psycopg[binary]`). La API es
-  sync y FastAPI la ejecuta en el threadpool; no hay async en la DB.
+- **SQLModel + SQLAlchemy 2 sync**. El runtime de Railway usa **pg8000**
+  (Python puro) porque el binario de psycopg + TensorFlow provoca un segfault
+  nativo en el contenedor Linux. Los scripts/tests locales y Alembic fuera del
+  proceso de TF usan psycopg 3 (`psycopg[binary]`). La API es sync y FastAPI la
+  ejecuta en el threadpool; no hay async en la DB.
 - Engines cacheados por URL con `pool_pre_ping=True`, `pool_recycle=300`,
   `connect_timeout` y `application_name`
   (`app/db/engine.py`).
