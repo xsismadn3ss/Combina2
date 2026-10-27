@@ -69,11 +69,28 @@ def test_ready_200_when_all_slots_load(sandbox, monkeypatch):
     assert data["fallback"] is False
     assert data["storage"] == "models_only"
     assert set(data["models"]) == {"extract", "generate", "classify"}
+    assert "database" in data
+    assert set(data["database"]) == {"configured", "reachable"}
     for slot, name in FILES.items():
         assert data["models"][slot]["active"] == name
         assert data["models"][slot]["loaded"] is True
         assert data["models"][slot]["fallback"] is False
         assert "error" not in data["models"][slot]
+
+
+def test_ready_does_not_depend_on_database(sandbox, monkeypatch):
+    _patch_loader(monkeypatch)
+    monkeypatch.setattr(
+        "app.main.database_status",
+        lambda: {"configured": True, "reachable": False},
+    )
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ready"] is True
+    assert data["database"] == {"configured": True, "reachable": False}
 
 
 def test_ready_503_when_a_slot_cannot_load(sandbox, monkeypatch):

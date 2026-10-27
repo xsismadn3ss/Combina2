@@ -1,7 +1,7 @@
 # Despliegue en Railway
 
-Arquitectura de producción de Combina2: **dos servicios Docker** del mismo repo,
-sin base de datos gestionada.
+Arquitectura de producción de Combina2: **dos servicios Docker** del mismo repo
+y **un Postgres gestionado** de Railway para el feedback de runtime.
 
 ```
 navegador
@@ -13,8 +13,9 @@ navegador
    ▼
 [backend] FastAPI + TensorFlow (privado, puerto 8000)
    │  /app/models/*.keras + manifest.json   (solo artefactos)
+   │  DATABASE_URL (psycopg)
    ▼
-respuesta JSON
+[Postgres] (solo feedback de runtime; datos de entrenamiento NO van a prod)
 ```
 
 - **web** es el único servicio con dominio público:
@@ -24,6 +25,9 @@ respuesta JSON
 - El frontend usa **same-origin**: en producción `NEXT_PUBLIC_API_URL` queda
   vacía, el navegador pide rutas relativas `/api/v1/...` y Next las proxya al
   backend. No hay CORS ni DNS privado expuesto al cliente.
+- **Postgres** guarda únicamente el feedback (`feedback`). La inferencia no
+  depende de la DB: si está caída, `/palette/*`, `/health` y `/ready` siguen
+  funcionando; solo `POST /feedback` responde `503` y el export falla.
 
 ## Servicios y root directories
 
@@ -31,6 +35,7 @@ respuesta JSON
 |---|---|---|---|---|
 | `backend` | `backend` | `backend/Dockerfile` | Service settings | `GET /ready` (120 s) |
 | `web` | `web` | `web/Dockerfile` | Service settings | `GET /` (60 s) |
+| `Postgres` | — | imagen gestionada | plugin de Railway | `pg_isready` |
 
 En Railway, cada servicio se crea apuntando al repo y se configura el **root
 directory** correspondiente; así el Dockerfile de cada carpeta se resuelve
@@ -57,9 +62,12 @@ de reinicio), no en `railway.toml`.
 
 | Variable | Valor | Notas |
 |---|---|---|
-| `BACKEND_INTERNAL_URL` | `http://backend.railway.internal:8000` | **Build arg**: `next.config.ts` compila los rewrites en build. Railway inyecta las variables como build args si el Dockerfile las declara con `ARG` (ya está). Usa el nombre real del servicio backend. |
+| `BACKEND_INTERNAL_URL` | `http://backend.railway.internal:8000` | **Build arg y runtime**: `next.config.ts` compila los rewrites y el route handler `/api/admin/feedback/export` lo usa para proxyar el CSV. Railway inyecta las variables como build args si el Dockerfile las declara con `ARG` (ya está). Usa el nombre real del servicio backend. |
 | `NEXT_PUBLIC_API_URL` | *(vacía / no definir)* | Vacía ⇒ same-origin (`/api/v1/...`). **No** poner `localhost`. |
 | `NEXT_PUBLIC_SITE_URL` | `https://combina2.up.railway.app` | **Build-time**: base de `canonical`, `og:url`, `og:image` y `twitter:image`. Si cambia el dominio, redeployar `web`. |
+| `ADMIN_USERNAME` | `admin` (o el que elijas) | Usuario de `/admin/feedback`. Se valida **solo en el servidor Next**; no usar `NEXT_PUBLIC_*`. |
+| `ADMIN_PASSWORD` | secreto | Contraseña del admin. Vacío ⇒ administración deshabilitada (503). |
+| `FEEDBACK_EXPORT_TOKEN` | **el mismo** que en `backend` | El route handler de Next lo usa para llamar al backend; nunca llega al navegador. |
 | `PORT` | inyectada por Railway | Next standalone escucha en `$PORT`. |
 
 ### Servicio `backend`
@@ -67,10 +75,48 @@ de reinicio), no en `railway.toml`.
 | Variable | Valor | Notas |
 |---|---|---|
 | `PORT` | inyectada por Railway | El `CMD` expande `${PORT:-8000}`. |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Plugin Postgres de Railway (`postgresql://...`). **El backend normaliza el esquema** a `postgresql+psycopg://` (`normalize_database_url`), también si llega como `postgres://`. **Obligatoria** para el feedback. |
+| `FEEDBACK_EXPORT_TOKEN` | secreto largo | Bearer de `GET /api/v1/feedback/export.csv`. Si falta, el endpoint responde 404. |
 | `IDENTIFY_MIN_CONFIDENCE` | opcional, default `0.70` | Umbral de `/identify` para `needsRetry`. |
 | `TF_CPP_MIN_LOG_LEVEL` | `3` | Ya fijada en la imagen; reduce ruido de TF. |
+| `TRAINING_DATABASE_URL` | **no definir** | Los datos de entrenamiento se quedan en local. |
 
-No hace falta `TRAINING_DB` ni ninguna credencial de base de datos.
+Alta del plugin y variables (no ejecutar desde este repo; documentación):
+
+```bash
+railway add --database postgres --json
+railway variable set 'DATABASE_URL=${{Postgres.DATABASE_URL}}' --service backend
+railway variable set FEEDBACK_EXPORT_TOKEN='<secreto>' --service backend
+# La web necesita el MISMO token para proxyar el CSV, más el admin:
+railway variable set FEEDBACK_EXPORT_TOKEN='<secreto>' --service web
+railway variable set ADMIN_USERNAME='admin' --service web
+railway variable set ADMIN_PASSWORD='<secreto-admin>' --service web
+```
+
+### Interfaz de administración
+
+La pantalla pública es `https://<dominio-web>/admin/feedback` (también
+`http://localhost:3000/admin/feedback` en local). Pide `ADMIN_USERNAME` y
+`ADMIN_PASSWORD`; el route handler de Next `/api/admin/feedback/export`:
+
+1. valida las credenciales con comparación en tiempo constante,
+2. llama al backend con `Authorization: Bearer $FEEDBACK_EXPORT_TOKEN`,
+3. devuelve el CSV al navegador.
+
+Así el token del backend **no se incluye en el bundle** ni se escribe en el
+navegador. `ADMIN_USERNAME`/`ADMIN_PASSWORD` son variables de runtime del
+servicio `web`; no uses `NEXT_PUBLIC_*`. Si `ADMIN_PASSWORD` está vacío, la
+pantalla responde 503 hasta configurarlo.
+
+**Pre-deploy command** del servicio `backend` (Service settings → Deploy):
+
+```bash
+alembic upgrade head
+```
+
+La imagen copia `alembic.ini` y `migrations/` a `/app`; `env.py` toma la URL de
+`DATABASE_URL` y usa un advisory lock para que varias réplicas no migren a la
+vez. El comando es idempotente.
 
 ## SEO y previews (Open Graph / Twitter)
 
@@ -97,11 +143,64 @@ el [Card Validator de X](https://cards-dev.twitter.com/validator) o el
 [Post Inspector de LinkedIn](https://www.linkedin.com/post-inspector/). Si el
 preview queda cacheado, fuerza un nuevo scrape en la herramienta.
 
-> **CRÍTICO — `training.db` no se despliega.** `backend/training.db` es evidencia
-> local de entrenamiento (runs/feedback); **no se copia a la imagen** (el
-> `Dockerfile` solo copia `app/` y `models/`, y `.dockerignore` lo excluye) y
-> **no se usa en runtime**. La inferencia y `/ready` dependen únicamente de
-> `models/*.keras` + `models/manifest.json`.
+> **La inferencia no depende de Postgres.** `backend/training.db` (SQLite) está
+> deprecado y **no se despliega** (el `Dockerfile` solo copia `app/`, `models/`,
+> `alembic.ini` y `migrations/`, y `.dockerignore` lo excluye). En producción
+> solo se usa Postgres para `feedback`; `/ready` y las redes E/G/C dependen
+> únicamente de `models/*.keras` + `models/manifest.json`. Si Postgres cae,
+> `/health` y `/ready` siguen respondiendo y `POST /feedback` devuelve `503` con
+> `Retry-After: 30`.
+
+## Backups, restore y export
+
+> `pg_dump`/`pg_restore` hablan libpq: usan `postgresql://...`, **no** el
+> esquema `postgresql+psycopg://...` de SQLAlchemy. Si copias la URL local de
+> `.env`, quita el sufijo `+psycopg`:
+>
+> ```bash
+> PG_URL="${DATABASE_URL/postgresql+psycopg:/postgresql:}"
+> # también válido si la URL ya es postgresql://...
+> ```
+
+### Backup
+
+```bash
+# URL pública/privada del plugin (dashboard → Postgres → Connect), sin +psycopg.
+pg_dump "$PG_URL" --no-owner --no-privileges -Fc -f combina2-feedback.dump
+```
+
+Railway también ofrece backups del plugin desde el dashboard; programa una
+política acorde con la retención (indefinida por defecto).
+
+### Restore
+
+```bash
+pg_restore --clean --if-exists --no-owner --no-privileges \
+  -d "$PG_URL" combina2-feedback.dump
+alembic upgrade head   # por si el dump era de un esquema anterior
+```
+
+### Export CSV (vía web público o proxy)
+
+El servicio `web` ya proxya `/api/v1/*` al backend privado, así que el `curl`
+puede ir contra la URL pública de `web`:
+
+```bash
+curl -fsS -H "Authorization: Bearer $FEEDBACK_EXPORT_TOKEN" \
+  "https://combina2.up.railway.app/api/v1/feedback/export.csv" -o feedback.csv
+```
+
+Alternativa sin endpoint público: `railway connect Postgres` abre un proxy
+local; usa esa URL en `DATABASE_URL` y ejecuta el script:
+
+```bash
+cd backend
+DATABASE_URL="postgresql://postgres:...@127.0.0.1:<puerto>/railway" \
+  python scripts/export_feedback_csv.py --output feedback.csv
+```
+
+Recuerda que `*.railway.internal` **no resuelve fuera** de Railway: fuera de
+Railway hay que usar el proxy de `railway connect` o una URL pública.
 
 ## Build y despliegue
 
@@ -140,7 +239,8 @@ instalación de TF) y luego el arranque (`uvicorn`, carga de modelos).
   `generate`, `classify`) resuelven su `.keras` activo, el archivo existe y su
   `sha256` coincide, **y** el modelo carga en Keras. Si algo falla devuelve 503
   con `ready:false`, `fallback:true` y el `error` por slot. `storage` siempre es
-  `models_only`.
+  `models_only`. El campo `database:{configured,reachable}` es informativo
+  (timeout corto + caché 10 s) y **no cambia** el 200/503.
 - **Backend `GET /health`**: liveness puro, 200 `{"status":"ok"}` sin cargar
   modelos (no penaliza el arranque).
 - **Web `GET /`**: 200 cuando Next sirve la home.
@@ -200,6 +300,13 @@ curl -fsS -X POST "$WEB/api/v1/palette/extract" \
 
 curl -fsS -X POST "$WEB/api/v1/palette/identify" \
   -F "file=@ruta/a/foto.jpg"
+
+curl -fsS -X POST "$WEB/api/v1/feedback" \
+  -H "Content-Type: application/json" \
+  -d '{"palette":{"type":"triada","colors":[{"value":"#FF0000","role":"primary"}]},"accepted":true,"score":0.9}'
+
+curl -fsS -H "Authorization: Bearer $FEEDBACK_EXPORT_TOKEN" \
+  "$WEB/api/v1/feedback/export.csv" | head -n 2
 ```
 
 Comprobaciones esperadas:
@@ -208,5 +315,7 @@ Comprobaciones esperadas:
   `loaded:true`, `storage:"models_only"`.
 - `/palette/identify` y `/palette/extract`: `fallback:false` (modelos reales).
   `identify` incluye `needsRetry` y `confidenceCalibrated`.
+- `POST /feedback`: 200 `{"ok":true}`; si Postgres está caído, 503 con
+  `Retry-After: 30`. `export.csv` devuelve 200 con el token y 401 sin él.
 - Si `fallback:true`, el backend no cargó TF/modelos: revisar `/ready` y los
   logs del servicio backend.

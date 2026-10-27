@@ -12,15 +12,32 @@ versiones y sus hashes; activar o hacer rollback solo mueve `active`/`previous`.
 ## 0. Requisitos
 
 - Rama limpia y `git status` revisado. Los `.keras` **sí** se versionan.
+- Postgres local arriba (`docker compose up -d postgres`) y bases migradas:
+  `python scripts/db_bootstrap.py --target all --create --upgrade`.
 - Gates de evaluación en verde antes de tocar producción.
 - No borrar `classify-v1.keras`: es la versión de rollback de C.
 
 ## 1. Feedback → dataset
 
 1. El frontend llama a `POST /api/v1/feedback` (`accepted`, `score`,
-   `palette`, `imageSha256`). Cada fila queda en la tabla `feedback` de
-   `backend/training.db`.
-2. Refresca/mezcla fuentes si hace falta:
+   `palette`, `imageSha256`). Cada fila queda en la tabla `feedback` del
+   PostgreSQL de **runtime** (`DATABASE_URL`).
+2. Exporta el feedback de producción y tráelo a la DB de entrenamiento local
+   (`TRAINING_DATABASE_URL`):
+
+   ```powershell
+   # Con el backend público (o `railway connect Postgres` y el script local)
+   curl.exe -fsS -H "Authorization: Bearer $env:FEEDBACK_EXPORT_TOKEN" `
+     "https://<backend>/api/v1/feedback/export.csv" -o feedback.csv
+
+   .venv-tf\Scripts\python.exe scripts\import_feedback_csv.py --input feedback.csv --dry-run
+   .venv-tf\Scripts\python.exe scripts\import_feedback_csv.py --input feedback.csv --apply
+   ```
+
+   `created_at` se preserva, `source='import'` y el `fingerprint` evita
+   duplicados si repites la importación. El CSV no contiene imágenes ni PII.
+
+3. Refresca/mezcla fuentes si hace falta:
 
    ```powershell
    .venv-tf\Scripts\python.exe scripts\fetch_colourlovers.py
@@ -28,11 +45,11 @@ versiones y sus hashes; activar o hacer rollback solo mueve `active`/`previous`.
    .venv-tf\Scripts\python.exe scripts\make_synthetic.py
    ```
 
-3. Verifica el esquema de `training_runs` (la migración B3 añade columnas de
-   forma idempotente la primera vez que se abre la DB):
+4. Verifica el esquema (Alembic, no hay migraciones ad-hoc):
 
    ```powershell
-   .venv-tf\Scripts\python.exe -c "from app.db.sqlite import get_connection; c=get_connection(); print([r[1] for r in c.execute('PRAGMA table_info(training_runs)')])"
+   .venv-tf\Scripts\python.exe scripts\db_bootstrap.py --target training --upgrade
+   .venv-tf\Scripts\python.exe -c "from sqlalchemy import inspect; from app.db.engine import training_engine; print([c['name'] for c in inspect(training_engine()).get_columns('training_runs')])"
    ```
 
 ## 2. Re-entrenar una versión nueva
@@ -59,10 +76,10 @@ Cada script elige por defecto la siguiente `vN` libre:
   TF/Keras, métricas (y `params`), y deja la nueva versión como `active`
   moviendo la anterior a `previous`.
 - **Splits disjuntos (DB + sintético):** `classify_split_palettes` carga
-  `training.db` una sola vez, baraja las paletas con semilla fija y reparte
-  train/val/test en buckets disjuntos (`seed % 3`). El relleno sintético usa
-  una semilla distinta por split. Ninguna paleta de DB cae en dos splits; si la
-  DB está vacía el set sintético es idéntico al histórico.
+  las paletas de la DB de entrenamiento una sola vez, baraja con semilla fija
+  y reparte train/val/test en buckets disjuntos (`seed % 3`). El relleno
+  sintético usa una semilla distinta por split. Ninguna paleta de DB cae en dos
+  splits; si la DB está vacía el set sintético es idéntico al histórico.
 
 La activación del script es **provisional**: producción aún no está validada
 hasta pasar los gates del paso 4. Si fallan, haz rollback inmediatamente

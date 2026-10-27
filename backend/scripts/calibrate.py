@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -302,21 +303,33 @@ def _reconstruction_samples() -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
 
 
 def _feedback_rows() -> list[Any]:
-    from app.db.sqlite import get_connection
+    from sqlalchemy import select
+
+    from app.db.models import Feedback
+    from app.db.session import training_session
 
     try:
-        conn = get_connection()
+        with training_session() as session:
+            rows = session.execute(
+                select(Feedback.accepted, Feedback.score, Feedback.palette_json)
+                .where(Feedback.accepted.is_not(None))
+                .order_by(Feedback.id)
+            ).all()
     except Exception:
         return []
-    try:
-        return conn.execute(
-            "SELECT accepted, score, palette_json FROM feedback "
-            "WHERE accepted IS NOT NULL ORDER BY id"
-        ).fetchall()
-    except Exception:
-        return []
-    finally:
-        conn.close()
+    return [
+        FeedbackRow(accepted=bool(accepted), score=score, palette_json=palette_json)
+        for accepted, score, palette_json in rows
+    ]
+
+
+@dataclass(frozen=True)
+class FeedbackRow:
+    """Fila de feedback desacoplada del ORM (calibración de G)."""
+
+    accepted: bool
+    score: float | None
+    palette_json: dict | None
 
 
 def _g_scores_for_feedback_rows(rows: list[Any]) -> tuple[np.ndarray, np.ndarray]:
@@ -329,15 +342,15 @@ def _g_scores_for_feedback_rows(rows: list[Any]) -> tuple[np.ndarray, np.ndarray
     pending: list[int] = []
     parsed: list[list[str]] = []
     for row in rows:
-        labels.append(bool(row["accepted"]))
-        if row["score"] is not None:
-            scores.append(float(row["score"]))
+        labels.append(bool(row.accepted))
+        if row.score is not None:
+            scores.append(float(row.score))
             parsed.append([])
         else:
             scores.append(float("nan"))
             pending.append(len(scores) - 1)
             try:
-                palette = json.loads(row["palette_json"] or "{}")
+                palette = row.palette_json or {}
                 parsed.append(
                     [str(c.get("value", "")).upper() for c in palette.get("colors", [])]
                 )

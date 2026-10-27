@@ -1,12 +1,13 @@
 "use client";
 import { useSyncExternalStore } from "react";
-import { Monitor, Moon, Settings, Sun } from "lucide-react";
+import Link from "next/link";
+import { Download, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { useTopK } from "@/hooks/useTopK";
 
@@ -86,6 +87,20 @@ export default function ConfigPage() {
             aria-label="Número de propuestas"
           />
           <div className="flex justify-between text-xs text-muted-foreground"><span>1 propuesta</span><span>10 propuestas</span></div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Exportar feedback</CardTitle>
+          <CardDescription>
+            Descarga el CSV del feedback para análisis o reentrenamiento. Requiere credenciales de administrador.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link href="/admin/feedback" className={buttonVariants({ variant: "outline" })}>
+            <Download data-icon="inline-start" aria-hidden />
+            Abrir exportación
+          </Link>
         </CardContent>
       </Card>
     </div>

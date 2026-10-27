@@ -99,3 +99,101 @@ export async function sendFeedback(
   });
   return handleResponse<FeedbackResponse>(res);
 }
+
+export type AdminFeedbackFilters = {
+  username: string;
+  password: string;
+  from?: string;
+  to?: string;
+  accepted?: boolean;
+};
+
+export type AdminFeedbackExportParams = AdminFeedbackFilters & {
+  includeSha256?: boolean;
+};
+
+function encodeBasicCredentials(username: string, password: string): string {
+  // Basic auth usa base64 de los bytes UTF-8, no de los code units UTF-16.
+  const bytes = new TextEncoder().encode(`${username}:${password}`);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function buildFiltersQuery(params: AdminFeedbackFilters): URLSearchParams {
+  const query = new URLSearchParams();
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  if (typeof params.accepted === "boolean") {
+    query.set("accepted", String(params.accepted));
+  }
+  return query;
+}
+
+async function apiErrorFromResponse(res: Response): Promise<ApiError> {
+  const text = await res.text();
+  let detail = `Error ${res.status}`;
+  try {
+    const data = JSON.parse(text) as { detail?: unknown };
+    if (typeof data.detail === "string") detail = data.detail;
+    else if (text) detail = text;
+  } catch {
+    if (text) detail = text;
+  }
+  return new ApiError(res.status, detail);
+}
+
+/**
+ * Cuenta las filas que cumplirían el export antes de descargar.
+ *
+ * La UI lo usa para no generar un CSV vacío. No usa `apiUrl()` a propósito:
+ * `/api/admin/*` vive en el servidor Next, no en el backend FastAPI.
+ */
+export async function countFeedback(
+  filters: AdminFeedbackFilters
+): Promise<number> {
+  const qs = buildFiltersQuery(filters).toString();
+  const res = await fetch(
+    `/api/admin/feedback/count${qs ? `?${qs}` : ""}`,
+    {
+      headers: {
+        Authorization: `Basic ${encodeBasicCredentials(filters.username, filters.password)}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  if (!res.ok) throw await apiErrorFromResponse(res);
+
+  const data = (await res.json()) as { count?: unknown };
+  return typeof data.count === "number" ? data.count : 0;
+}
+
+/**
+ * Descarga el CSV de feedback a través del proxy de administración de Next.
+ *
+ * No usa `apiUrl()` a propósito: `/api/admin/*` vive en el servidor Next y no
+ * en el backend FastAPI. Las credenciales se validan allí y el token del
+ * backend nunca llega al navegador.
+ */
+export async function exportFeedbackCsv(
+  params: AdminFeedbackExportParams
+): Promise<Blob> {
+  const query = buildFiltersQuery(params);
+  query.set("include_sha256", params.includeSha256 ? "true" : "false");
+
+  const qs = query.toString();
+  const res = await fetch(
+    `/api/admin/feedback/export${qs ? `?${qs}` : ""}`,
+    {
+      headers: {
+        Authorization: `Basic ${encodeBasicCredentials(params.username, params.password)}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  if (!res.ok) throw await apiErrorFromResponse(res);
+
+  return await res.blob();
+}

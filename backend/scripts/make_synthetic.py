@@ -12,7 +12,8 @@ volumen (por defecto 10.000 paletas).
 
 Uso:
     backend/.venv/bin/python backend/scripts/make_synthetic.py --n 10000
-    TRAINING_DB=/tmp/t.db backend/.venv/bin/python backend/scripts/make_synthetic.py --n 200 --seed 7
+    TRAINING_DATABASE_URL=postgresql+psycopg://.../t \
+        backend/.venv/bin/python backend/scripts/make_synthetic.py --n 200 --seed 7
 """
 
 from __future__ import annotations
@@ -26,10 +27,13 @@ import numpy as np
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app.db.sqlite import get_connection, get_db_path  # noqa: E402
+from app.config import training_database_url  # noqa: E402
+from app.db.engine import sanitized_url  # noqa: E402
+from app.db.session import training_session  # noqa: E402
 from app.ml.color_spaces import ColorConverter  # noqa: E402
 from app.ml.datasets import (  # noqa: E402
     VALID_HARMONY_LABELS,
+    count_palettes,
     count_palettes_by_source,
     insert_palette,
     load_palette_keys,
@@ -39,6 +43,7 @@ from app.services.classic import ClassicPaletteGenerator  # noqa: E402
 
 SOURCE = "synthetic"
 PALETTE_SIZE = 5
+BATCH_SIZE = 500
 
 LABEL_TO_HARMONY: dict[str, HarmonyType] = {
     "complementario": HarmonyType.COMPLEMENTARY,
@@ -73,18 +78,17 @@ def generate_palette(
 
 
 def run(n: int = 10_000, seed: int = 42, sigma: float = 2.5) -> dict:
-    """Genera `n` paletas en la DB de `get_db_path()`; devuelve el reporte."""
+    """Genera `n` paletas en la DB de entrenamiento; devuelve el reporte."""
     rng = np.random.RandomState(seed)
     generator = ClassicPaletteGenerator()
-    conn = get_connection()
-    try:
-        existing = load_palette_keys(conn)
+    with training_session() as session:
+        existing = load_palette_keys(session)
         inserted = 0
         skipped = 0
         for _ in range(n):
             hexes, label = generate_palette(rng, generator, sigma)
             pid = insert_palette(
-                conn,
+                session,
                 source=SOURCE,
                 hexes=hexes,
                 rating=None,
@@ -95,13 +99,13 @@ def run(n: int = 10_000, seed: int = 42, sigma: float = 2.5) -> dict:
                 skipped += 1
             else:
                 inserted += 1
-        conn.commit()
-        by_source = count_palettes_by_source(conn)
-        total = int(conn.execute("SELECT COUNT(*) FROM palettes").fetchone()[0])
-    finally:
-        conn.close()
+                if inserted % BATCH_SIZE == 0:
+                    session.commit()
+        session.commit()
+        by_source = count_palettes_by_source(session)
+        total = count_palettes(session)
     return {
-        "db": str(get_db_path()),
+        "db": sanitized_url(training_database_url()),
         "requested": n,
         "seed": seed,
         "inserted": inserted,

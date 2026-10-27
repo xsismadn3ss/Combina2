@@ -9,6 +9,12 @@ generar paletas → identificar una paleta → enviar feedback. La sección
 Alcance: demo de producto (web + API). No sustituye a `eval.run_eval` ni a los
 gates de CI.
 
+> **Documentación histórica (Fase 6).** Este documento describe el estado de la
+> rama `22-combina2` en 2026-10-20, cuando SQLite (`backend/training.db`) era la
+> fuente de datos. Desde el issue #28 **PostgreSQL es la fuente de verdad**
+> (`docs/data.md`): las referencias a `training.db` son evidencia histórica y no
+> el flujo actual.
+
 ## 1. Prerrequisitos
 
 - Repo en la rama de trabajo y `git status` revisado.
@@ -27,9 +33,10 @@ gates de CI.
   `verify` debe salir con código 0. Si falla (archivo ausente o sha256
   distinto), **detén el demo**: no promociones ni ejecutes rollback para
   “arreglarlo” sin revisar `docs/retraining.md`.
-- `backend/training.db` accesible (se crea sola si no existe). **Sí se versiona**
-  como evidencia de los runs/feedback (excepción de `.gitignore`); ahí persisten
-  las filas de `/feedback`.
+- `backend/training.db` (histórico de la Fase 6): entonces se creaba sola y se
+  versionaba como evidencia de los runs/feedback. **Desde #28 está deprecada**:
+  PostgreSQL es la fuente de verdad y ningún código de `app/` la usa; el archivo
+  se conserva en git sin modificar como evidencia histórica.
 - Imágenes de prueba:
   - una foto con **variedad de color** (varias tonalidades, buena luz) para el
     camino feliz de `/identify`;
@@ -374,4 +381,5 @@ Todos los pasos: **PASS**.
   `accepted` sigue siendo obligatorio.
 - **Artefactos fuera del repo**: capturas y JSON viven en
   `%TEMP%\opencode\fase6\`; solo los informes de eval y este documento se
-  versionan. `backend/training.db` conserva las filas de feedback de la demo.
+  versionan. `backend/training.db` conserva las filas de feedback de la demo
+  (evidencia histórica de Fase 6; desde #28 el feedback vive en PostgreSQL).

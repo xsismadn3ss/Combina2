@@ -24,6 +24,12 @@ RUN uv pip install --system --no-cache ".[ml]"
 # Solo artefactos de inferencia (nunca training.db).
 COPY models ./models
 
+# Migraciones: el pre-deploy de Railway ejecuta `alembic upgrade head` y el
+# bootstrap local usa el mismo alembic.ini. `script_location` es relativo a
+# este archivo (`%(here)s/migrations`), así que funciona desde /app.
+COPY alembic.ini ./
+COPY migrations ./migrations
+
 EXPOSE 8000
 # Railway inyecta PORT; el shell expande el default fuera de Railway.
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

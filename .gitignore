@@ -9,6 +9,9 @@ __pycache__
 *.db
 *.db-journal
 !backend/training.db
+.env
+.env.local
+!.env.example
 backend/.venv/
 backend/.venv-tf/
 backend/.eval-cache/

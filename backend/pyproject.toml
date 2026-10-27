@@ -9,15 +9,19 @@ description = "Combina2 backend: FastAPI + TensorFlow. Fase 6: redes E/G/C, eval
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.1",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "numpy>=2.0.0",
     "pillow>=12.3.0",
+    "psycopg[binary]>=3.3.6",
     "pyarrow>=15.0.0",
     "pydantic>=2.0.0",
     "pytest>=9.1.1",
+    "python-dotenv>=1.2.4",
     "python-multipart>=0.0.32",
     "scikit-learn>=1.9.0",
+    "sqlmodel>=0.0.48",
     "uvicorn>=0.52.4",
 ]
 

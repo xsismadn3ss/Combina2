@@ -236,55 +236,45 @@ def test_classify_test_split_is_disjoint_from_train_and_val():
     assert signatures["train"].isdisjoint(signatures["val"])
 
 
-def _populate_classify_db(db_path: Path, n: int = 9) -> None:
-    """Crea una training.db temporal con ``n`` paletas etiquetadas de 5 colores."""
-    from app.db.sqlite import get_connection
+def _populate_classify_db(session, n: int = 9) -> None:
+    """Crea ``n`` paletas etiquetadas de 5 colores en la DB de entrenamiento."""
     from app.ml.datasets import insert_palette
 
     labels = ["complementario", "triada", "analogo", "monocromatica"]
-    conn = get_connection(db_path)
-    try:
-        for i in range(n):
-            base = i * 23
+    for i in range(n):
+        base = i * 23
+        hexes = [
+            "#%02X%02X%02X" % ((base + j * 17) % 256, (base * 3 + j * 29) % 256, (base * 7 + j * 41) % 256)
+            for j in range(5)
+        ]
+        insert_palette(
+            session,
+            source="synthetic",
+            hexes=hexes,
+            harmony_label=labels[i % len(labels)],
+        )
+    session.commit()
+
+
+def _populate_classify_db_balanced(session, per_class: int) -> None:
+    """DB de entrenamiento con ``per_class`` paletas de 5 colores por etiqueta."""
+    from app.ml.datasets import insert_palette
+
+    labels = ["complementario", "triada", "analogo", "monocromatica"]
+    for label_idx, label in enumerate(labels):
+        for i in range(per_class):
+            base = label_idx * 61 + i * 7
             hexes = [
-                "#%02X%02X%02X" % ((base + j * 17) % 256, (base * 3 + j * 29) % 256, (base * 7 + j * 41) % 256)
+                "#%02X%02X%02X"
+                % (
+                    (base + j * 19) % 256,
+                    (base * 3 + j * 31) % 256,
+                    (base * 7 + j * 43) % 256,
+                )
                 for j in range(5)
             ]
-            insert_palette(
-                conn,
-                source="synthetic",
-                hexes=hexes,
-                harmony_label=labels[i % len(labels)],
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _populate_classify_db_balanced(db_path: Path, per_class: int) -> None:
-    """training.db temporal con ``per_class`` paletas de 5 colores por etiqueta."""
-    from app.db.sqlite import get_connection
-    from app.ml.datasets import insert_palette
-
-    labels = ["complementario", "triada", "analogo", "monocromatica"]
-    conn = get_connection(db_path)
-    try:
-        for label_idx, label in enumerate(labels):
-            for i in range(per_class):
-                base = label_idx * 61 + i * 7
-                hexes = [
-                    "#%02X%02X%02X"
-                    % (
-                        (base + j * 19) % 256,
-                        (base * 3 + j * 31) % 256,
-                        (base * 7 + j * 43) % 256,
-                    )
-                    for j in range(5)
-                ]
-                insert_palette(conn, source="synthetic", hexes=hexes, harmony_label=label)
-        conn.commit()
-    finally:
-        conn.close()
+            insert_palette(session, source="synthetic", hexes=hexes, harmony_label=label)
+    session.commit()
 
 
 def _db_label_by_signature() -> dict[tuple[str, ...], str]:
@@ -295,12 +285,8 @@ def _db_label_by_signature() -> dict[tuple[str, ...], str]:
 
 
 @pytest.mark.parametrize("per_class", [3, 10])
-def test_stratified_partition_is_disjoint_and_balanced(
-    monkeypatch, tmp_path, per_class
-):
-    db_path = tmp_path / "training.db"
-    _populate_classify_db_balanced(db_path, per_class=per_class)
-    monkeypatch.setenv("TRAINING_DB", str(db_path))
+def test_stratified_partition_is_disjoint_and_balanced(training_db, per_class):
+    _populate_classify_db_balanced(training_db, per_class=per_class)
 
     splits = benchmarks.classify_split_palettes(
         n_train=600, n_val=120, n_test=80
@@ -343,11 +329,9 @@ def test_stratified_partition_is_disjoint_and_balanced(
 
 @pytest.mark.parametrize("test_seed", [43, 7, 10_042, 20_043])
 def test_eval_split_test_bucket_disjoint_for_any_test_seed(
-    monkeypatch, tmp_path, test_seed
+    training_db, monkeypatch, test_seed
 ):
-    db_path = tmp_path / "training.db"
-    _populate_classify_db_balanced(db_path, per_class=3)
-    monkeypatch.setenv("TRAINING_DB", str(db_path))
+    _populate_classify_db_balanced(training_db, per_class=3)
 
     captured: dict[str, list] = {}
 
@@ -439,11 +423,9 @@ def test_extract_cache_invalidates_when_split_palettes_change(monkeypatch, tmp_p
     assert len(list(tmp_path.glob("*.npz"))) == 2
 
 
-def test_classify_splits_disjoint_with_populated_db(monkeypatch, tmp_path):
+def test_classify_splits_disjoint_with_populated_db(training_db):
     """DB cargada una vez y repartida: ninguna paleta de DB cae en dos splits."""
-    db_path = tmp_path / "training.db"
-    _populate_classify_db(db_path, n=9)
-    monkeypatch.setenv("TRAINING_DB", str(db_path))
+    _populate_classify_db(training_db, n=9)
 
     splits = benchmarks.classify_split_palettes(n_train=6, n_val=3, n_test=3)
     signatures = {
@@ -468,11 +450,11 @@ def test_classify_splits_disjoint_with_populated_db(monkeypatch, tmp_path):
     assert sum(len(db_signatures & signatures[name]) for name in signatures) == 9
 
 
-def test_eval_test_split_does_not_reuse_train_or_val_db_palettes(monkeypatch, tmp_path):
+def test_eval_test_split_does_not_reuse_train_or_val_db_palettes(
+    training_db, monkeypatch
+):
     """`classify_eval_split` (pipeline test) usa el bucket de test, no train/val."""
-    db_path = tmp_path / "training.db"
-    _populate_classify_db(db_path, n=9)
-    monkeypatch.setenv("TRAINING_DB", str(db_path))
+    _populate_classify_db(training_db, n=9)
 
     captured: dict[str, list] = {}
 

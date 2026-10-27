@@ -7,6 +7,7 @@ from app.api.routes.feedback import router as feedback_router
 from app.api.routes.generate import router as generate_router
 from app.api.routes.identify import router as identify_router
 from app.api.routes.meta import colors_router, harmony_router, models_router
+from app.db.engine import database_status
 from app.services import inference
 
 
@@ -44,8 +45,14 @@ def create_app() -> FastAPI:
 
     @application.get("/ready", tags=["health"])
     def ready() -> JSONResponse:
-        """Readiness: 200 solo si los 3 slots activos cargan de verdad."""
+        """Readiness: 200 solo si los 3 slots activos cargan de verdad.
+
+        ``database`` es informativo (configured/reachable con timeout corto):
+        la inferencia no depende de Postgres y el 200/503 sigue decidiéndose
+        únicamente por los modelos.
+        """
         report = inference.readiness_report()
+        report["database"] = database_status()
         return JSONResponse(
             status_code=200 if report["ready"] else 503,
             content=report,
