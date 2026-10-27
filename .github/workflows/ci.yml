@@ -24,7 +24,7 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_USER: combina2
-          POSTGRES_PASSWORD: combina2
+          POSTGRES_PASSWORD: combina2  # ggignore
           POSTGRES_DB: combina2
         ports:
           - 5432:5432
@@ -67,7 +67,7 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_USER: combina2
-          POSTGRES_PASSWORD: combina2
+          POSTGRES_PASSWORD: combina2  # ggignore
           POSTGRES_DB: combina2
         ports:
           - 5432:5432
@@ -123,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       POSTGRES_USER: combina2
-      POSTGRES_PASSWORD: combina2
+      POSTGRES_PASSWORD: combina2  # ggignore
       POSTGRES_DB: combina2
     steps:
       - uses: actions/checkout@v4
