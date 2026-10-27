@@ -134,6 +134,19 @@ que no altera ese criterio.
 - **Query:** `from` / `to` (ISO-8601, sobre `created_at`), `accepted`
   (`true|false`), `include_sha256` (default `true`). Ejemplo:
   `/api/v1/feedback/export.csv?from=2026-01-01&to=2026-12-31&accepted=true`.
+
+## GET /api/v1/feedback/count (conteo previo)
+
+- **Auth:** la misma que el export (Bearer `FEEDBACK_EXPORT_TOKEN`).
+- **Query:** `from` / `to` / `accepted` (los mismos filtros; `include_sha256`
+  se ignora).
+- **Resp 200:** `{"count": N}`.
+- **Errores:** `401` token inválido, `404` export no configurado, `503` DB no
+  disponible.
+- **Uso:** la pantalla `/admin/feedback` lo consulta **antes** de descargar. Si
+  `count == 0`, muestra un aviso y no genera un CSV vacío. El endpoint de
+  export sigue disponibles para automatización y devuelve el CSV con encabezado
+  aunque no haya filas.
 - **Resp 200:** `text/csv; charset=utf-8` (UTF-8 **sin BOM**),
   `Content-Disposition: attachment; filename="feedback.csv"`,
   `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. Streaming por
@@ -153,3 +166,22 @@ que no altera ese criterio.
   - Mitigación de CSV injection: se prefija `'` a valores que empiezan por
     `= + - @`.
   - Nunca incluye imágenes, binarios ni rutas.
+
+### Interfaz web de administración
+
+- **Página:** `GET /admin/feedback` (web Next.js). No está enlazada en la
+  navegación principal; se abre desde **Preferencias → Exportar feedback**.
+- **Credenciales:** `ADMIN_USERNAME` / `ADMIN_PASSWORD` en el servicio `web`
+  (runtime, nunca `NEXT_PUBLIC_*`). Vacío ⇒ 503.
+- **Proxy:** `GET /api/admin/feedback/export` (route handler de Next) valida
+  HTTP Basic contra esas variables y llama al backend con
+  `Authorization: Bearer $FEEDBACK_EXPORT_TOKEN`. El token no llega al cliente.
+- **Conteo previo:** la página llama primero a
+  `GET /api/admin/feedback/count` con los mismos filtros. Si el resultado es
+  `0`, muestra un aviso y no descarga un archivo vacío. El proxy a su vez usa
+  `GET /api/v1/feedback/count` del backend.
+- **Query:** los mismos `from`, `to`, `accepted` e `include_sha256` del
+  endpoint anterior.
+- **Contrato del backend:** sigue siendo Bearer con `FEEDBACK_EXPORT_TOKEN`;
+  la autenticación Basic es solo de la interfaz web y se valida en el servidor
+  Next.

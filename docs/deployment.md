@@ -62,9 +62,12 @@ de reinicio), no en `railway.toml`.
 
 | Variable | Valor | Notas |
 |---|---|---|
-| `BACKEND_INTERNAL_URL` | `http://backend.railway.internal:8000` | **Build arg**: `next.config.ts` compila los rewrites en build. Railway inyecta las variables como build args si el Dockerfile las declara con `ARG` (ya está). Usa el nombre real del servicio backend. |
+| `BACKEND_INTERNAL_URL` | `http://backend.railway.internal:8000` | **Build arg y runtime**: `next.config.ts` compila los rewrites y el route handler `/api/admin/feedback/export` lo usa para proxyar el CSV. Railway inyecta las variables como build args si el Dockerfile las declara con `ARG` (ya está). Usa el nombre real del servicio backend. |
 | `NEXT_PUBLIC_API_URL` | *(vacía / no definir)* | Vacía ⇒ same-origin (`/api/v1/...`). **No** poner `localhost`. |
 | `NEXT_PUBLIC_SITE_URL` | `https://combina2.up.railway.app` | **Build-time**: base de `canonical`, `og:url`, `og:image` y `twitter:image`. Si cambia el dominio, redeployar `web`. |
+| `ADMIN_USERNAME` | `admin` (o el que elijas) | Usuario de `/admin/feedback`. Se valida **solo en el servidor Next**; no usar `NEXT_PUBLIC_*`. |
+| `ADMIN_PASSWORD` | secreto | Contraseña del admin. Vacío ⇒ administración deshabilitada (503). |
+| `FEEDBACK_EXPORT_TOKEN` | **el mismo** que en `backend` | El route handler de Next lo usa para llamar al backend; nunca llega al navegador. |
 | `PORT` | inyectada por Railway | Next standalone escucha en `$PORT`. |
 
 ### Servicio `backend`
@@ -84,7 +87,26 @@ Alta del plugin y variables (no ejecutar desde este repo; documentación):
 railway add --database postgres --json
 railway variable set 'DATABASE_URL=${{Postgres.DATABASE_URL}}' --service backend
 railway variable set FEEDBACK_EXPORT_TOKEN='<secreto>' --service backend
+# La web necesita el MISMO token para proxyar el CSV, más el admin:
+railway variable set FEEDBACK_EXPORT_TOKEN='<secreto>' --service web
+railway variable set ADMIN_USERNAME='admin' --service web
+railway variable set ADMIN_PASSWORD='<secreto-admin>' --service web
 ```
+
+### Interfaz de administración
+
+La pantalla pública es `https://<dominio-web>/admin/feedback` (también
+`http://localhost:3000/admin/feedback` en local). Pide `ADMIN_USERNAME` y
+`ADMIN_PASSWORD`; el route handler de Next `/api/admin/feedback/export`:
+
+1. valida las credenciales con comparación en tiempo constante,
+2. llama al backend con `Authorization: Bearer $FEEDBACK_EXPORT_TOKEN`,
+3. devuelve el CSV al navegador.
+
+Así el token del backend **no se incluye en el bundle** ni se escribe en el
+navegador. `ADMIN_USERNAME`/`ADMIN_PASSWORD` son variables de runtime del
+servicio `web`; no uses `NEXT_PUBLIC_*`. Si `ADMIN_PASSWORD` está vacío, la
+pantalla responde 503 hasta configurarlo.
 
 **Pre-deploy command** del servicio `backend` (Service settings → Deploy):
 

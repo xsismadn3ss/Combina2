@@ -41,6 +41,24 @@ En Windows: `backend\.venv\Scripts\python.exe`.
 `pytest` necesita Postgres arriba (no hay SQLite): las fixtures crean y migran
 `combina2_test`/`combina2_training_test` con Alembic.
 
+### Exportar feedback desde la interfaz
+
+Con el stack arriba, abre <http://localhost:3000/admin/feedback> (también
+enlazado desde **Config → Exportar feedback**). Pide las credenciales definidas
+en `.env`:
+
+```dotenv
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=combina2-admin
+FEEDBACK_EXPORT_TOKEN=dev-export-token   # el mismo para backend y web
+```
+
+El servidor Next valida el usuario/contraseña y llama al backend con el token;
+el token no se expone al navegador. En Railway, define `ADMIN_USERNAME`,
+`ADMIN_PASSWORD` y `FEEDBACK_EXPORT_TOKEN` en el servicio `web` (y el token
+también en `backend`). La API sigue disponible para automatización con
+`Authorization: Bearer $FEEDBACK_EXPORT_TOKEN`.
+
 ## CI / evaluación local
 
 Rutas en minúscula (el repo usa `backend/`; imprescindible en Linux/macOS,

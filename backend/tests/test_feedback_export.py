@@ -153,3 +153,48 @@ def test_export_contains_no_images_or_paths(client, export_token, runtime_db):
     assert "c:\\\\" not in lower
     for word in ("image/jpeg", "image/png", ".jpg", ".png"):
         assert word not in lower
+
+
+def test_count_matches_filters(client, export_token, runtime_db):
+    _seed(
+        runtime_db,
+        accepted=True,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    _seed(
+        runtime_db,
+        accepted=False,
+        created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+    _seed(
+        runtime_db,
+        accepted=True,
+        created_at=datetime(2026, 12, 1, tzinfo=timezone.utc),
+    )
+    runtime_db.commit()
+
+    url = f"{APICOnfig.prefix}/feedback/count"
+    headers = {"Authorization": f"Bearer {export_token}"}
+
+    assert client.get(url, headers=headers).json() == {"count": 3}
+    assert client.get(url, headers=headers, params={"accepted": "true"}).json() == {
+        "count": 2
+    }
+    assert client.get(
+        url,
+        headers=headers,
+        params={"from": "2026-05-01", "to": "2026-07-01"},
+    ).json() == {"count": 1}
+    assert client.get(
+        url,
+        headers=headers,
+        params={"from": "2020-01-01", "to": "2020-12-31"},
+    ).json() == {"count": 0}
+
+
+def test_count_requires_export_token(client):
+    url = f"{APICOnfig.prefix}/feedback/count"
+    assert client.get(url).status_code == 401
+    assert (
+        client.get(url, headers={"Authorization": "Bearer nope"}).status_code == 401
+    )

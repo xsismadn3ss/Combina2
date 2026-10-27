@@ -136,7 +136,9 @@ python scripts/migrate_sqlite_to_postgres.py --sqlite training.db --apply
      "https://<backend>/api/v1/feedback/export.csv" -o feedback.csv
    ```
 
-   o `python scripts/export_feedback_csv.py --output feedback.csv`.
+   o desde la interfaz `/admin/feedback` con `ADMIN_USERNAME`/`ADMIN_PASSWORD`
+   (el route handler de Next proxyal backend con el mismo token), o
+   `python scripts/export_feedback_csv.py --output feedback.csv`.
 3. Import local a la DB de entrenamiento:
 
    ```bash

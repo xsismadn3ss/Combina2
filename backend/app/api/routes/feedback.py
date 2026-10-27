@@ -72,6 +72,34 @@ def feedback(
 
 
 @router.get(
+    "/feedback/count",
+    description=(
+        "Cuenta el feedback que cumple los filtros del export. La interfaz "
+        "lo usa antes de descargar para no generar un CSV vacío."
+    ),
+    response_description="Número de filas que se exportarían.",
+)
+def feedback_count(
+    authorization: str | None = Header(default=None),
+    start: datetime | None = Query(default=None, alias="from"),
+    end: datetime | None = Query(default=None, alias="to"),
+    accepted: bool | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    _require_export_token(authorization)
+    try:
+        total = count_feedback(session, start=start, end=end, accepted=accepted)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("feedback count failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Conteo no disponible temporalmente",
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+        ) from None
+    return {"count": total}
+
+
+@router.get(
     "/feedback/export.csv",
     description=(
         "Exporta el feedback como CSV (UTF-8). Requiere "

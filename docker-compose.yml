@@ -65,6 +65,13 @@ services:
       - "3000:3000"
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
+      # Admin del export CSV. Se validan en el servidor Next; nunca se envían
+      # al bundle del navegador. Vacío = export de administración deshabilitado.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Token interno del backend: el route handler de Next lo usa para
+      # proxyar el CSV. No es NEXT_PUBLIC_*.
+      FEEDBACK_EXPORT_TOKEN: ${FEEDBACK_EXPORT_TOKEN:-}
     depends_on:
       backend:
         condition: service_healthy
