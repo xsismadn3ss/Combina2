@@ -72,7 +72,7 @@ def test_generate_complementary_red_to_cyan_fallback():
     response = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
     assert response.status_code == 200
     data = response.json()
-    # G activa o fallback: contrato común de cinco colores.
+    # G activa o fallback: contrato común de siete colores.
     # acepta ambos para que pase en .venv y .venv-tf
     try:
         import tensorflow  # noqa: F401
@@ -86,9 +86,9 @@ def test_generate_complementary_red_to_cyan_fallback():
         expects_fallback = active_keras_path("generate") is None
         assert data["fallback"] is expects_fallback
         if not expects_fallback:
-            # neural: 5 colores, score ordenado, tipo correcto
+            # neural: 7 colores, score ordenado, tipo correcto
             assert data["palettes"][0]["type"] == HarmonyType.COMPLEMENTARY.value
-            assert 5 == len(data["palettes"][0]["colors"])
+            assert 7 == len(data["palettes"][0]["colors"])
             assert data["palettes"][0]["colors"][0]["value"] == "#FF0000"
     else:
         assert data["fallback"] is True
@@ -96,7 +96,7 @@ def test_generate_complementary_red_to_cyan_fallback():
         palette = data["palettes"][0]
         assert palette["type"] == HarmonyType.COMPLEMENTARY.value
         assert palette["colors"][0]["value"] == "#FF0000"
-        assert len(palette["colors"]) == 5
+        assert len(palette["colors"]) == 7
         assert [p["score"] for p in data["palettes"]] == sorted(
             (p["score"] for p in data["palettes"]), reverse=True
         )

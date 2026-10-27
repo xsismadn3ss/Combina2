@@ -41,8 +41,8 @@ def _png_bytes(hexes=None, size=64):
 # --- G: generate endpoint / inference ---------
 
 def test_generate_endpoint_with_model_returns_valid_palettes():
-    # si hay modelo G activo y TF, debe responder fallback False con palettes válidas (5 colores)
-    # si no hay TF o no hay modelo, también debe responder pero fallback True (2-3 colores clásico)
+    # si hay modelo G activo y TF, debe responder fallback False con palettes válidas (7 colores)
+    # si no hay TF o no hay modelo, también debe responder pero fallback True
     payload = {"colors": ["#FF0000"], "harmony": HarmonyType.COMPLEMENTARY.value, "topK": 3}
     resp = client.post(f"{APICOnfig.prefix}/palette/generate", json=payload)
     assert resp.status_code == 200
@@ -51,7 +51,7 @@ def test_generate_endpoint_with_model_returns_valid_palettes():
     assert 1 <= len(data["palettes"]) <= 3
     for pal in data["palettes"]:
         assert pal["type"] in VALID_HARMONY
-        assert len(pal["colors"]) == 5
+        assert len(pal["colors"]) == inference.PALETTE_SIZE
         for c in pal["colors"]:
             assert HEX_RE.match(c["value"])
             assert c["role"] in VALID_ROLES
@@ -83,11 +83,8 @@ def test_generate_respects_harmony_filter_and_topK():
         assert len(data["palettes"]) == 5
         for pal in data["palettes"]:
             # cuando hay modelo, todas deben ser del tipo pedido (filtro/reranking)
-            if not data["fallback"]:
-                assert pal["type"] == harmony.value
-                assert 5 == len(pal["colors"])
-            else:
-                assert len(pal["colors"]) == 5
+            assert pal["type"] == harmony.value
+            assert len(pal["colors"]) == inference.PALETTE_SIZE
         if data["fallback"]:
             assert data["palettes"][0]["type"] == harmony.value
 
@@ -142,7 +139,7 @@ def test_generate_failure_falls_back(monkeypatch):
     res = inference.generate_palettes(["#FF0000"], HarmonyType.COMPLEMENTARY, top_k=3)
     assert res.fallback is True
     assert len(res.palettes) == 3
-    assert all(len(p.colors) == 5 for p in res.palettes)
+    assert all(len(p.colors) == inference.PALETTE_SIZE for p in res.palettes)
 
 
 def test_classic_fallback_preserves_multicolor_inputs_and_diverse_harmony(monkeypatch):
@@ -159,9 +156,9 @@ def test_classic_fallback_preserves_multicolor_inputs_and_diverse_harmony(monkey
         palette_values = [color.value for color in palette.colors]
         assert palette.type == HarmonyType.ANALOGOUS.value
         assert all(color in palette_values for color in selected)
-        assert len(palette_values) == 5
+        assert len(palette_values) == inference.PALETTE_SIZE
 
-    # Las dos propuestas adicionales deben cambiar de tono apreciablemente,
+    # Las propuestas adicionales deben cambiar de tono apreciablemente,
     # no limitarse a variaciones casi imperceptibles del primer color.
     extras = [signatures[i][3:] for i in range(len(signatures))]
     assert len(set(extras)) == len(extras)
@@ -184,7 +181,7 @@ def test_real_generate_model_preserves_selected_colors_and_diversifies():
     generated_labs = []
     for palette in result.palettes:
         values = [color.value.upper() for color in palette.colors]
-        assert len(values) == 5
+        assert len(values) == inference.PALETTE_SIZE
         assert all(color in values for color in selected)
         signatures.append(tuple(values))
         generated_labs.append([ColorConverter.hex_to_lab(value) for value in values[3:]])
@@ -205,7 +202,7 @@ def test_fallback_with_issue_colors_preserves_anchors_and_diversifies(monkeypatc
     assert len(result.palettes) == 5
     for palette in result.palettes:
         values = [color.value.upper() for color in palette.colors]
-        assert len(values) == 5
+        assert len(values) == inference.PALETTE_SIZE
         assert all(color in values for color in selected)
     assert len({tuple(c.value for c in p.colors) for p in result.palettes}) == 5
 
@@ -230,7 +227,7 @@ def test_issue21_actual_ui_request_preserves_selected_colors_and_diversity(monke
     accent_sets = []
     for palette in data["palettes"]:
         values = [color["value"].upper() for color in palette["colors"]]
-        assert len(values) == 5
+        assert len(values) == inference.PALETTE_SIZE
         assert selected.issubset(values)
         signatures.append(tuple(values))
         accent_sets.append(values[3:])
@@ -509,7 +506,7 @@ def test_no_broken_color_logic():
             hex2 = ColorConverter.lab_to_hex(lab).upper()
             assert HEX_RE.match(hex2)
         if not resp.json()["fallback"]:
-            assert 5 == len(pal["colors"])
+            assert inference.PALETTE_SIZE == len(pal["colors"])
     # identify pesos suman 1
     resp2 = client.post(f"{APICOnfig.prefix}/palette/identify", files={"file": ("x.png", _png_bytes(), "image/png")})
     assert resp2.status_code == 200

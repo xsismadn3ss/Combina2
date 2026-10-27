@@ -17,7 +17,7 @@ import { useTopK } from "@/hooks/useTopK";
 
 type FlowState = "idle" | "uploading" | "selecting" | "generating" | "done" | "error";
 
-const MAX_SELECTED_COLORS = 5;
+const MAX_SELECTED_COLORS = 4;
 
 export default function GenerarPage() {
   const { topK, setTopK } = useTopK();

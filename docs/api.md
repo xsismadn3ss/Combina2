@@ -15,9 +15,10 @@ amplía con `weight?`, `score?`, `confidence?`, `fallback?`.
 
 - **Req:** `{colors: ["#FF5733", ...] (1..5), topK?: 1..10 = 5, harmony?: "complementario" |
   "triada" | "analogo" | "monocromatica" | null = null}`.
-  Si se envían más de 5 colores base, responde `400`.
-- **Resp 200:** `{palettes: [{type, colors: [5×Color], score}], fallback: bool}` rankeadas
-  por `score` desc.
+  Si se envían más de 5 colores base, responde `400`. La UI limita la selección a **4**.
+- **Resp 200:** `{palettes: [{type, colors: [7×Color], score}], fallback: bool}` rankeadas
+  por `score` desc. Las anclas enviadas se conservan al inicio y se completan con acentos
+  generados hasta 7 colores: con 1–4 anclas se añaden 6–3 acentos y con 5 anclas, 2.
 - **`harmony` omitido o `null` = "cualquier estilo":** cada propuesta usa una armonía
   real distinta, elegida por una rotación **determinista** de
   `[complementario, triada, analogo, monocromatica]`. El índice inicial se deriva de un
