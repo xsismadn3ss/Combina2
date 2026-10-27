@@ -18,7 +18,7 @@
 
 ## Supuestos abiertos (por confirmar)
 
-1. Extracción fija en **K=10** colores, paletas generadas de **5 colores** (estándar COLOURLovers).
+1. Extracción fija en **K=10** colores, paletas generadas de **7 colores** (anclas elegidas + acentos; la UI permite hasta 4 anclas).
 2. Clasificador con **4 clases**: `complementario | triada | analogo | monocromatica`.
 3. Artefactos de producción en `backend/models/*.keras` + `manifest.json` (versionados en repo).
 4. `POST /generate` devuelve **ranking multi-armonía con score**, `harmony` pasa a ser opcional/filtro.

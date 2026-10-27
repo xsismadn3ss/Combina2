@@ -10,11 +10,12 @@ router = APIRouter(prefix=f"{APICOnfig.prefix}/palette", tags=["palette"])
 @router.post(
     "/generate",
     description=(
-        "Genera paletas candidatas a partir de 1+ colores base. Sin `harmony` "
-        "(o con `null`) devuelve propuestas de tipos variados siguiendo una "
-        "rotación determinista de las 4 armonías; con `harmony` explícita "
-        "filtra/rerankea a ese tipo. La red G aporta el score; sin modelo "
-        "responde el motor clásico HSL con `fallback: true`."
+        "Genera paletas candidatas a partir de 1+ colores base. Cada paleta "
+        "conserva las anclas y las completa con acentos hasta 7 colores. Sin "
+        "`harmony` (o con `null`) devuelve propuestas de tipos variados "
+        "siguiendo una rotación determinista de las 4 armonías; con `harmony` "
+        "explícita filtra/rerankea a ese tipo. La red G aporta el score; sin "
+        "modelo responde el motor clásico HSL con `fallback: true`."
     ),
     response_description="Paletas candidatas ordenadas por score descendente.",
 )

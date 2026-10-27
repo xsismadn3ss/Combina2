@@ -50,7 +50,7 @@ def _assert_valid(data: dict, expected_count: int, anchors: list[str]) -> None:
     assert scores == sorted(scores, reverse=True)
     for palette in data["palettes"]:
         assert palette["type"] in VALID_HARMONY
-        assert len(palette["colors"]) == 5
+        assert len(palette["colors"]) == inference.PALETTE_SIZE
         assert 0.0 <= palette["score"] <= 1.0
         values = [color["value"].upper() for color in palette["colors"]]
         assert all(HEX_RE.match(value) for value in values)
@@ -60,7 +60,7 @@ def _assert_valid(data: dict, expected_count: int, anchors: list[str]) -> None:
 
 @pytest.mark.parametrize("include_harmony", [False, True])
 def test_any_harmony_without_model_covers_four_types(monkeypatch, include_harmony):
-    """Omitido y `null` son equivalentes: 4 tipos reales, 5 colores."""
+    """Omitido y `null` son equivalentes: 4 tipos reales, 7 colores."""
     monkeypatch.setattr(inference, "load_keras_model", lambda _slot: None)
     payload = {"colors": ANCHORS, "topK": 5}
     if include_harmony:
@@ -143,7 +143,7 @@ def test_any_harmony_small_topk_returns_rotation_subset(monkeypatch, top_k):
 
 
 def test_classic_fallback_without_harmony_still_works(monkeypatch):
-    """Regresión: el fallback clásico sigue dando 5 colores y anclas exactas."""
+    """Regresión: el fallback clásico sigue dando 7 colores y anclas exactas."""
     monkeypatch.setattr(inference, "load_keras_model", lambda _slot: None)
 
     result = inference.generate_palettes(ANCHORS, None, top_k=5)
@@ -152,5 +152,5 @@ def test_classic_fallback_without_harmony_still_works(monkeypatch):
     assert len(result.palettes) == 5
     for palette in result.palettes:
         values = [color.value.upper() for color in palette.colors]
-        assert len(values) == 5
+        assert len(values) == inference.PALETTE_SIZE
         assert set(ANCHORS).issubset(values)

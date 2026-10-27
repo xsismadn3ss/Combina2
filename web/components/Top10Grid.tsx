@@ -11,7 +11,7 @@ type Props = {
   maxSelected?: number;
 };
 
-export function Top10Grid({ colors, selected, onToggle, maxSelected = 5 }: Props) {
+export function Top10Grid({ colors, selected, onToggle, maxSelected = 4 }: Props) {
   return (
     <Card>
       <CardHeader>

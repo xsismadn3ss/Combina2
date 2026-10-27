@@ -331,6 +331,15 @@ def _extract_with_model(model: Any, image_bytes: bytes) -> list[Color] | None:
 
 _HARMONY_LABELS = ["complementario", "triada", "analogo", "monocromatica"]
 _HARMONY_TO_IDX = {h: i for i, h in enumerate(_HARMONY_LABELS)}
+# Tamaño del contrato de `/palette/generate`: las anclas seleccionadas más los
+# acentos generados. Con el máximo de 5 anclas quedan al menos 2 acentos.
+PALETTE_SIZE = 7
+_HARMONY_OFFSETS: dict[HarmonyType, tuple[float, float]] = {
+    HarmonyType.ANALOGOUS: (-30.0, 30.0),
+    HarmonyType.TRIADIC: (120.0, 240.0),
+    HarmonyType.COMPLEMENTARY: (180.0, 0.0),
+    HarmonyType.MONOCHROMATIC: (0.0, 0.0),
+}
 # Orden fijo de la rotación para el modo "cualquier estilo" (`harmony=None`).
 _HARMONY_ROTATION = (
     HarmonyType.COMPLEMENTARY,
@@ -387,6 +396,51 @@ def harmony_sequence(
     ]
 
 
+def _harmony_offsets(harmony: HarmonyType) -> tuple[float, float]:
+    return _HARMONY_OFFSETS.get(harmony, (180.0, 0.0))
+
+
+def _has_color(colors: list[Color], tone: str) -> bool:
+    tone = tone.upper()
+    return any(color.value.upper() == tone for color in colors)
+
+
+def _append_accent(colors: list[Color], tone: str) -> bool:
+    """Añade un acento si no está ya en la paleta. Devuelve si lo añadió."""
+    tone = tone.upper()
+    if _has_color(colors, tone):
+        return False
+    colors.append(Color(value=tone, role=ColorRole.ACCENT.value))
+    return True
+
+
+def _fill_palette_colors(
+    colors: list[Color],
+    hue: float,
+    saturation: float,
+    lightness: float,
+    variation: float,
+    offsets: tuple[float, float],
+) -> None:
+    """Completa la paleta manteniendo la geometría armónica elegida.
+
+    Se usa después de los tonos armónicos principales. Reutiliza los dos
+    offsets de la armonía y separa cada ronda en luminosidad (y algo de
+    saturación) para obtener tonos distintos sin salir del tipo declarado.
+    """
+    position = 0
+    while len(colors) < PALETTE_SIZE and position < 360:
+        offset = offsets[position % len(offsets)] + variation
+        round_index = position // len(offsets)
+        delta = 18.0 * (round_index + 1)
+        tone_l = lightness + delta if position % 2 == 0 else lightness - delta
+        tone_l = min(88.0, max(15.0, tone_l))
+        tone_s = min(95.0, max(40.0, saturation - 8.0 * (round_index % 3)))
+        tone = ColorConverter.hsl_to_hex((hue + offset) % 360.0, tone_s, tone_l)
+        _append_accent(colors, tone)
+        position += 1
+
+
 def generate_palettes(
     base_hex_colors: list[str], harmony: HarmonyType | None, top_k: int
 ) -> GenerateResponse:
@@ -408,12 +462,7 @@ def generate_palettes(
     sequence = harmony_sequence(base_hex_colors, harmony, count)
     variants: list[ScoredPalette] = []
     for index, current_harmony in enumerate(sequence):
-        harmony_offsets = {
-            HarmonyType.ANALOGOUS: (-30.0, 30.0),
-            HarmonyType.TRIADIC: (120.0, 240.0),
-            HarmonyType.COMPLEMENTARY: (180.0, 0.0),
-            HarmonyType.MONOCHROMATIC: (0.0, 0.0),
-        }.get(current_harmony, (180.0, 0.0))
+        harmony_offsets = _harmony_offsets(current_harmony)
         colors = [Color(value=value, role="primary" if i == 0 else "secondary")
                   for i, value in enumerate(anchors)]
         variation = float(index) * 22.0
@@ -432,21 +481,13 @@ def generate_palettes(
                 for j, offset in enumerate(offsets)
             ]
         for tone in tones:
-            if len(colors) >= max(5, len(anchors)):
+            if len(colors) >= PALETTE_SIZE:
                 break
-            if tone not in {color.value for color in colors}:
-                colors.append(Color(value=tone, role="accent"))
-        # Para entradas coincidentes, completa con tonos claramente separados.
-        tone_step = 0
-        while len(colors) < max(5, len(anchors)):
-            tone_step += 1
-            tone = ColorConverter.hsl_to_hex(
-                (hue + variation + tone_step * 67.0) % 360.0,
-                max(45.0, saturation),
-                (25.0, 75.0, 40.0, 65.0)[tone_step % 4],
-            ).upper()
-            if tone not in {color.value for color in colors}:
-                colors.append(Color(value=tone, role="accent"))
+            _append_accent(colors, tone)
+        # Las anclas ya ocupan parte de la paleta; completa con tonos separados.
+        _fill_palette_colors(
+            colors, hue, saturation, lightness, variation, harmony_offsets
+        )
         variants.append(ScoredPalette(type=current_harmony.value, colors=colors,
                                       score=round(1.0 - index * 0.01, 2)))
     return GenerateResponse(palettes=variants, fallback=True)
@@ -511,36 +552,41 @@ def _condition_palettes(
     for index, (harmony, proposed) in enumerate(
         candidates[:max(1, int(top_k))]
     ):
-        offsets = {
-            HarmonyType.ANALOGOUS: (-30.0, 30.0),
-            HarmonyType.TRIADIC: (120.0, 240.0),
-            HarmonyType.COMPLEMENTARY: (180.0, 0.0),
-            HarmonyType.MONOCHROMATIC: (0.0, 0.0),
-        }.get(harmony, (180.0, 0.0))
+        offsets = _harmony_offsets(harmony)
         colors = [Color(value=h.upper(), role="primary" if i == 0 else "secondary")
                   for i, h in enumerate(anchors)]
         rotation = index * 37.0
-        for j in range(5 - len(colors)):
+        position = 0
+        # Genera acentos hasta completar la paleta. La posición avanza también
+        # cuando un tono coincide con un ancla, para no devolver duplicados.
+        while len(colors) < PALETTE_SIZE and position < 360:
             # The G head supplies chroma/lightness guidance for each generated
             # slot; hue is projected onto the requested harmony instead of
             # blindly accepting a prediction that may replace an anchor.
-            proposal_color = proposed.colors[min(3 + j, len(proposed.colors) - 1)]
+            proposal_color = proposed.colors[
+                min(3 + position, len(proposed.colors) - 1)
+            ]
             _, proposal_s, proposal_l = ColorConverter.hex_to_hsl(proposal_color.value)
             if harmony == HarmonyType.MONOCHROMATIC:
-                tone_l = (15.0 + (index * 19.0 + j * 47.0) % 75.0)
+                tone_l = (15.0 + (index * 19.0 + position * 47.0) % 75.0)
                 tone_l = min(90.0, max(10.0, tone_l * 0.7 + proposal_l * 0.3))
                 tone = ColorConverter.hsl_to_hex(
                     hue, max(35.0, saturation * 0.7 + proposal_s * 0.3), tone_l
                 )
             else:
-                offset = offsets[j % 2] + rotation
+                offset = offsets[position % 2] + rotation
                 tone_s = min(95.0, max(45.0,
                     saturation * 0.7 + proposal_s * 0.3 + (index % 3 - 1) * 8.0))
                 tone_l = min(82.0, max(25.0,
-                    lightness * 0.7 + proposal_l * 0.3 + (j * 22.0 - 10.0)
+                    lightness * 0.7 + proposal_l * 0.3
+                    + ((position % 6) * 12.0 - 10.0)
                     + (index % 3 - 1) * 9.0))
                 tone = ColorConverter.hsl_to_hex((hue + offset) % 360.0, tone_s, tone_l)
-            colors.append(Color(value=tone.upper(), role=ColorRole.ACCENT.value))
+            _append_accent(colors, tone)
+            position += 1
+        _fill_palette_colors(
+            colors, hue, saturation, lightness, index * 22.0, offsets
+        )
         result.append(ScoredPalette(type=harmony.value, colors=colors,
                                     score=proposed.score))
     # Contrato: ranking por score descendente también cuando se mezclan armonías.
