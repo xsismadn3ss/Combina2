@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/xsismadn3ss/Combina2)
+
 # Combina2
 
 Combina 2 o más colores para generar una paleta. Identifica paletas de colores tomando una foto.
