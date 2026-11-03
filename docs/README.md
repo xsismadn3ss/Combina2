@@ -10,6 +10,7 @@
 - [`architecture.md`](./architecture.md) — visión, monorepo, flujos historia 1 y 2, decisiones.
 - [`data.md`](./data.md) — PostgreSQL (runtime + entrenamiento), Alembic, datasets público + sintético, retención.
 - [`models.md`](./models.md) — redes E / G / C: entradas, salidas, loss, entrenamiento, registro/versiones/rollback.
+- [`neural-networks.md`](./neural-networks.md) — cómo funcionan las neuronas por capa, flujo de datos e inferencia, I/O esperado y entrenamiento por red (cierra #32).
 - [`retraining.md`](./retraining.md) — flujo feedback → dataset → re-entrenar → calibrar → eval → promover/rollback.
 - [`api.md`](./api.md) — contratos REST estables para el frontend.
 - [`frontend.md`](./frontend.md) — app Next.js que reemplaza `Web/` (Blazor).
