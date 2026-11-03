@@ -60,10 +60,12 @@ como evidencia histórica y **deprecado**), `__pycache__/`, `web/node_modules/`,
 `web /generar` → `POST /extract` (E: foto → top-10 + pesos) → usuario selecciona 1..n →
 `POST /generate {colors, topK}` (G: candidatas rankeadas con score) → feedback 👍/👎 →
 `POST /feedback` (snapshot a PostgreSQL, `DATABASE_URL`).
+Detalle de capas y condicionamiento en [`neural-networks.md`](./neural-networks.md) §§3/5.
 
 ### Historia 2 — Identificar paleta
 `web /identificar` → `POST /identify` (foto → E extrae 10 colores → C clasifica armonía →
 `{type, confidence, colors}`).
+Detalle del pipeline E→C y calibración en [`neural-networks.md`](./neural-networks.md) §§4/5.
 
 ### Entrenamiento (offline, nunca en request)
 fetch/cura → PostgreSQL de entrenamiento (`TRAINING_DATABASE_URL`) →

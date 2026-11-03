@@ -1,5 +1,9 @@
 # Modelos — E / G / C (TensorFlow/Keras, formato `.keras`)
 
+> Detalle neurona-por-capa, flujos Mermaid e I/O exacto en
+> [`neural-networks.md`](./neural-networks.md) (cierra #32). Aquí la referencia
+> técnica por slot.
+
 Todo color de entrenamiento/inferencia se representa en **CIELAB normalizado**.
 Conversiones y normalización viven en `backend/app/ml/color_spaces.py`.
 

@@ -5,6 +5,7 @@ Combina 2 o más colores para generar una paleta. Identifica paletas de colores 
 ## Documentación
 
 - [Backend](./backend/README.md)
+- [Redes neuronales E/G/C (capas, inferencia, entrenamiento)](./docs/neural-networks.md)
 - [Datos y PostgreSQL](./docs/data.md)
 - [Re-entrenamiento, promoción y rollback](./docs/retraining.md)
 - [Despliegue en Railway](./docs/deployment.md)
