@@ -86,12 +86,12 @@ export function UploadImage({ onFileSelected, isLoading, previewUrl, onClear }: 
           </p>
         )}
         {previewUrl ? (
-          <div className="relative overflow-hidden rounded-xl border">
+          <div className="relative flex justify-center overflow-hidden rounded-xl border bg-muted/40">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={previewUrl}
               alt="Vista previa de la imagen cargada"
-              className="h-64 w-full object-cover"
+              className="mx-auto h-auto max-h-[60vh] w-full object-contain sm:max-h-[70vh]"
             />
             {onClear && (
               <Button
