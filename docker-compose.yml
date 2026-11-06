@@ -33,7 +33,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_PORT:-8000}:8000"
     environment:
       # Dentro de la red de compose el host es `postgres`, no localhost.
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-combina2}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-combina2}
