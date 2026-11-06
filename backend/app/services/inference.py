@@ -245,12 +245,152 @@ def load_keras_model(slot: str) -> Any | None:
     return model
 
 
-def extract_colors_from_outputs(centroids: Any, weights: Any) -> list[Color]:
+# Umbrales del post-proceso de la red E (deterministas, sin modelos nuevos).
+# MERGE_DELTA_E_MAX: paridad ΔE76 ya usada en el proyecto (manifiesto/eval).
+EXTRACT_MIN_WEIGHT = 0.005
+MERGE_DELTA_E_MAX = 5.0
+# Rescate de minorías: distancia mínima a todo centroide, masa mínima
+# (fracción de muestras), compacidad (mediana ΔE a la media rescatada) y
+# separación mínima del color rescatado a los centroides finales.
+RESCUE_MIN_DIST = 15.0
+RESCUE_MIN_MASS = 0.005
+RESCUE_COMPACT_MAX = 12.0
+RESCUE_MIN_SEPARATION = 10.0
+# N.º máximo de semillas (muestras lejanas) que prueba el rescate, en orden
+# determinista de distancia descendente. Acota el coste: cada intento es un
+# barrido O(N) sobre las muestras.
+RESCUE_MAX_SEEDS = 8
+
+
+def _denorm_lab_rows(c_norm: np.ndarray) -> np.ndarray:
+    """Lab normalizado (red E) → Lab crudo (unidades ΔE76)."""
+    c = np.asarray(c_norm, dtype=np.float64)
+    out = np.empty_like(c)
+    out[..., 0] = c[..., 0] * 100.0
+    out[..., 1] = c[..., 1] * 128.0
+    out[..., 2] = c[..., 2] * 128.0
+    return out
+
+
+def _merge_near_duplicate_centroids(
+    lab: np.ndarray, weights: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Fusiona centroides casi-duplicados (ΔE76 < MERGE_DELTA_E_MAX).
+
+    Greedy determinista en orden de peso descendente: cada centroide se
+    absorbe en el primer grupo fusionado a distancia < umbral (media
+    ponderada por peso, pesos sumados) o abre un grupo nuevo. Devuelve
+    (labs, pesos) ordenados por peso descendente; la suma de pesos se conserva.
+    """
+    order = np.argsort(-weights, kind="stable")
+    merged_labs: list[np.ndarray] = []
+    merged_w: list[float] = []
+    for i in order:
+        li = np.asarray(lab[int(i)], dtype=np.float64)
+        wi = float(weights[int(i)])
+        placed = False
+        for j, mj in enumerate(merged_labs):
+            if float(np.linalg.norm(li - mj)) < MERGE_DELTA_E_MAX:
+                total = merged_w[j] + wi
+                if total > 0.0:
+                    merged_labs[j] = (mj * merged_w[j] + li * wi) / total
+                merged_w[j] = total
+                placed = True
+                break
+        if not placed:
+            merged_labs.append(li)
+            merged_w.append(wi)
+    labs = np.array(merged_labs, dtype=np.float64) if merged_labs else np.zeros((0, 3))
+    wts = np.array(merged_w, dtype=np.float64)
+    if wts.size:
+        reord = np.argsort(-wts, kind="stable")
+        labs, wts = labs[reord], wts[reord]
+    return labs, wts
+
+
+def _rescue_minority_color(
+    samples_raw: np.ndarray, centroids_raw: np.ndarray
+) -> tuple[np.ndarray, float] | None:
+    """Rescata un color minoritario compacto y cromáticamente lejano.
+
+    Sobre las muestras Lab crudas: las lejanas a *todos* los centroides
+    (min ΔE76 >= RESCUE_MIN_DIST) son candidatas. Se prueban varias semillas
+    en orden determinista de distancia descendente (hasta RESCUE_MAX_SEEDS
+    intentos): se toma la más lejana restante, se agrupan sus vecinas en
+    un radio RESCUE_COMPACT_MAX (núcleo compacto, robusto a píxeles de
+    transición JPEG) y, si la masa del núcleo >= RESCUE_MIN_MASS y su media
+    sigue separada de los centroides (>= RESCUE_MIN_SEPARATION), se
+    retorna (lab, masa). Si un núcleo no pasa masa o separación, se
+    descarta entero y se prueba con la siguiente semilla lejana; si
+    ninguna pasa, None. Probar varias semillas evita que un outlier
+    diminuto aún más lejano (p. ej. un píxel de neón) robe el único
+    intento y oculte una minoría grande (p. ej. una camiseta roja).
+    """
+    try:
+        s = np.asarray(samples_raw, dtype=np.float64)
+        q = np.asarray(centroids_raw, dtype=np.float64)
+        if s.ndim != 2 or s.shape[1] != 3 or s.shape[0] == 0:
+            return None
+        if q.ndim != 2 or q.shape[1] != 3 or q.shape[0] == 0:
+            return None
+        # (N, K) distancias euclidianas en Lab = ΔE76.
+        d = np.linalg.norm(s[:, None, :] - q[None, :, :], axis=-1)
+        nearest = d.min(axis=1)
+        far = nearest >= RESCUE_MIN_DIST
+        if not bool(far.any()):
+            return None
+        far_idx = np.flatnonzero(far)
+        # Orden determinista: distancia descendente (estable ante empates).
+        order = far_idx[np.argsort(-nearest[far_idx], kind="stable")]
+        discarded = np.zeros(s.shape[0], dtype=bool)
+        attempts = 0
+        for seed_idx in order:
+            seed_idx = int(seed_idx)
+            if discarded[seed_idx]:
+                continue
+            if attempts >= RESCUE_MAX_SEEDS:
+                break
+            attempts += 1
+            seed = s[seed_idx]
+            core = far & ~discarded & (np.linalg.norm(s - seed, axis=-1) <= RESCUE_COMPACT_MAX)
+            mass = float(core.sum()) / float(s.shape[0])
+            if mass < RESCUE_MIN_MASS or not bool(core.any()):
+                discarded |= core
+                continue
+            mean = s[core].mean(axis=0)
+            separation = float(np.linalg.norm(q - mean, axis=-1).min())
+            if separation < RESCUE_MIN_SEPARATION:
+                discarded |= core
+                continue
+            return np.asarray(mean, dtype=np.float64), mass
+        return None
+    except Exception:
+        return None
+
+
+def extract_colors_from_outputs(
+    centroids: Any, weights: Any, samples_lab: Any | None = None
+) -> list[Color]:
     """Salidas de la red E ((10,3) Lab normalizado + (10,) pesos) → `Color`.
 
-    Sin TF ni sklearn: filtra pesos < 0.01, renormaliza (suma 1.0) y ordena
-    por peso. Lanza `ValueError` si las salidas son inválidas (el llamador
-    cae al fallback clásico).
+    Post-proceso determinista (sin TF ni sklearn):
+
+    1. Fusiona centroides casi-duplicados (ΔE76 < MERGE_DELTA_E_MAX)
+       sumando pesos.
+    2. Filtra pesos < EXTRACT_MIN_WEIGHT (máx 9, deja slot libre) con
+       fallback al centroide de mayor peso si nada supera el umbral.
+    3. Si se pasan `samples_lab` (N,3 Lab normalizado del preproceso),
+       rescata una minoría compacta cromáticamente lejana a los
+       centroides KEPT (post-filtro, incluido el fallback) con masa
+       >= RESCUE_MIN_MASS. Evaluar contra los kept —y no contra todos
+       los mergeados— evita que migajas fragmentadas bajo el umbral
+       oculten la minoría al rescate.
+    4. Añade el rescate, renormaliza (suma 1.0), ordena por peso y
+       limita a 10 colores.
+
+    Lanza `ValueError` si las salidas son inválidas (el llamador cae al
+    fallback clásico). Ante cualquier fallo interno del post-proceso,
+    degrada al parseo directo sin rescate (nunca rompe el contrato).
     """
     c = np.asarray(centroids, dtype=np.float64)
     w = np.asarray(weights, dtype=np.float64)
@@ -267,27 +407,56 @@ def extract_colors_from_outputs(centroids: Any, weights: Any) -> list[Color]:
     if not np.isfinite(total) or total <= 0.0:
         raise ValueError("Pesos de la red E inválidos")
     w = w / total
-    order = np.argsort(-w, kind="stable")
-    keep = [int(i) for i in order if float(w[i]) >= 0.01][:10]
+    try:
+        labs_raw, w_merged = _merge_near_duplicate_centroids(_denorm_lab_rows(c), w)
+        total_m = float(w_merged.sum())
+        if not np.isfinite(total_m) or total_m <= 0.0:
+            raise ValueError("Fusión de centroides inválida")
+        w_merged = w_merged / total_m
+    except ValueError:
+        raise
+    except Exception:
+        # Degradación segura: parseo directo sin fusión ni rescate.
+        labs_raw, w_merged = _denorm_lab_rows(c), w
+    order = np.argsort(-w_merged, kind="stable")
+    # Filtra ANTES del rescate (máx 9 para dejar slot libre). El rescate
+    # ya superó RESCUE_MIN_MASS (= EXTRACT_MIN_WEIGHT) sobre la fracción
+    # cruda de muestras: se añade tras filtrar para que la renormalización
+    # no lo deje bajo el umbral (0.005/1.005 < 0.005).
+    keep = [int(i) for i in order if float(w_merged[i]) >= EXTRACT_MIN_WEIGHT][:9]
     if not keep:
-        keep = [int(order[0])]
-    sel = w[keep]
-    sel = sel / float(sel.sum())
+        keep = [int(order[0])]  # fallback: un solo centroide dominante
+    kept_labs = labs_raw[keep]
+    kept_w = w_merged[keep]
+    rescue: tuple[np.ndarray, float] | None = None
+    if samples_lab is not None and kept_labs.shape[0] < 10:
+        try:
+            s = np.asarray(samples_lab, dtype=np.float64)
+            if s.ndim == 3 and s.shape[0] == 1:
+                s = s[0]
+            # Contra los centroides KEPT (post-filtro): las migajas
+            # fragmentadas bajo el umbral no deben ocultar la minoría.
+            rescue = _rescue_minority_color(_denorm_lab_rows(s), kept_labs)
+        except Exception:
+            rescue = None
+    if rescue is not None and kept_labs.shape[0] < 10:
+        rescue_lab, mass = rescue
+        kept_labs = np.vstack([kept_labs, np.asarray(rescue_lab).reshape(1, 3)])
+        kept_w = np.append(kept_w, float(mass))
+    sel = kept_w / float(kept_w.sum())
+    final_order = np.argsort(-sel, kind="stable")
     colors: list[Color] = []
-    for idx, wi in zip(keep, sel):
-        lab = ColorConverter.lab_denormalize(
-            (float(c[idx, 0]), float(c[idx, 1]), float(c[idx, 2]))
-        )
+    for idx in final_order[:10]:
         lab = (
-            float(np.clip(lab[0], 0.0, 100.0)),
-            float(np.clip(lab[1], -128.0, 128.0)),
-            float(np.clip(lab[2], -128.0, 128.0)),
+            float(np.clip(kept_labs[idx, 0], 0.0, 100.0)),
+            float(np.clip(kept_labs[idx, 1], -128.0, 128.0)),
+            float(np.clip(kept_labs[idx, 2], -128.0, 128.0)),
         )
         colors.append(
             Color(
                 value=ColorConverter.lab_to_hex(lab).upper(),
                 role=ColorRole.PREDOMINANT.value,
-                weight=float(wi),
+                weight=float(sel[idx]),
             )
         )
     return colors
@@ -324,7 +493,9 @@ def _extract_with_model(model: Any, image_bytes: bytes) -> list[Color] | None:
             centroids, weights = pred[0], pred[1]
         else:
             raise ValueError("Salidas de la red E con forma inválida")
-        return extract_colors_from_outputs(centroids, weights)
+        return extract_colors_from_outputs(
+            centroids, weights, samples_lab=pre["pixels_lab"]
+        )
     except Exception:
         return None
 

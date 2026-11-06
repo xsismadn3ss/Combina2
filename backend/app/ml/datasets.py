@@ -8,8 +8,9 @@ Este módulo lo usan los scripts de Fase 2 (`backend/scripts/`):
 
 Convenciones:
 
-- Lado mayor de imagen: 300px · submuestreo: 3000 px · RGB→CIELAB vía
-  `app/ml/color_spaces.py` · normalización L∈[0,1], a/b∈[-1,1].
+- Lado mayor de imagen: 300px · submuestreo: 3000 px estratificado
+  espacial (rejilla uniforme sobre alto×ancho + jitter determinista) ·
+  RGB→CIELAB vía `app/ml/color_spaces.py` · normalización L∈[0,1], a/b∈[-1,1].
 - Dedup de imágenes por `sha256` (UNIQUE en `images`).
 - Dedup de paletas por `sha256` del contenido canónico
   (`source|HEX,HEX,...` en mayúsculas): `palettes.key` es UNIQUE y el insert
@@ -98,11 +99,56 @@ def resize_max_side(img: Image.Image, max_side: int = MAX_SIDE) -> Image.Image:
 
 
 def sample_pixels(rgb: np.ndarray, n: int = SAMPLE_PIXELS, seed: int = 42) -> np.ndarray:
-    """Submuestreo determinista de `n` píxeles (con reemplazo si faltan)."""
-    flat = rgb.reshape(-1, 3)
+    """Submuestreo estratificado espacial de `n` píxeles (determinista).
+
+    Rejilla uniforme de `filas × columnas` sobre alto×ancho (proporcional a
+    la forma de la imagen) donde cada celda aporta una cuota de muestras con
+    jitter uniforme determinista (`RandomState(seed)`). Garantiza cobertura
+    espacial proporcional al área: regiones pequeñas pero visualmente
+    importantes (ej. camiseta roja) sobreviven en las muestras, cosa que el
+    muestreo aleatorio puro no garantizaba.
+
+    Si hay menos píxeles que `n`, muestrea con reemplazo (como antes).
+    Misma entrada + mismo `seed` → misma salida.
+    """
+    arr = np.asarray(rgb, dtype=np.uint8)
+    if arr.ndim != 3 or arr.shape[2] != 3:
+        raise ValueError(f"Se esperaba RGB (H,W,3), llegó {arr.shape!r}")
+    h, w, _ = arr.shape
+    total = h * w
     rng = np.random.RandomState(seed)
-    idx = rng.choice(flat.shape[0], size=n, replace=flat.shape[0] < n)
-    return flat[idx]
+    if total <= n:
+        flat = arr.reshape(-1, 3)
+        idx = rng.choice(total, size=n, replace=True)
+        return np.ascontiguousarray(flat[idx])
+    # Rejilla proporcional a la forma: filas/cols tal que filas*cols >= n.
+    rows = max(1, int(round((n * h / w) ** 0.5)))
+    cols = max(1, int(np.ceil(n / rows)))
+    cells = rows * cols
+    quota, extra = divmod(n, cells)
+    ys = np.empty(n, dtype=np.intp)
+    xs = np.empty(n, dtype=np.intp)
+    pos = 0
+    for gy in range(rows):
+        y0 = (gy * h) // rows
+        y1 = ((gy + 1) * h) // rows
+        for gx in range(cols):
+            if pos >= n:
+                break
+            count = quota + (1 if (gy * cols + gx) < extra else 0)
+            if count == 0:
+                continue
+            x0 = (gx * w) // cols
+            x1 = ((gx + 1) * w) // cols
+            jy = rng.rand(count) * max(1, y1 - y0)
+            jx = rng.rand(count) * max(1, x1 - x0)
+            ys[pos : pos + count] = np.clip((y0 + jy).astype(np.intp), 0, h - 1)
+            xs[pos : pos + count] = np.clip((x0 + jx).astype(np.intp), 0, w - 1)
+            pos += count
+        if pos >= n:
+            break
+    assert pos == n, f"rejilla incompleta: {pos} != {n}"
+    return np.ascontiguousarray(arr[ys, xs])
 
 
 def rgb_batch_to_lab(rgb: np.ndarray) -> np.ndarray:

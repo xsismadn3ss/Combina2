@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-10-20T16:21:39Z",
+  "updatedAt": "2026-11-06T19:55:00Z",
   "extract": {
     "active": "extract-v1.keras",
     "versions": [
@@ -15,8 +15,8 @@
         "tfVersion": "2.21.0",
         "kerasVersion": "3.15.1",
         "metrics": {
-          "delta_e76_mean": 3.811913230834324,
-          "delta_e76_max": 14.110594083866431,
+          "delta_e76_mean": 1.1855140585576893,
+          "delta_e76_max": 8.943731678302182,
           "fallback_count": 0,
           "n": 10
         },
@@ -103,18 +103,18 @@
         "tfVersion": "2.21.0",
         "kerasVersion": "3.15.1",
         "metrics": {
-          "accuracy": 0.975,
-          "macro_f1": 0.9757309941520468,
+          "accuracy": 0.9375,
+          "macro_f1": 0.9352761485826001,
           "per_class_recall": {
-            "complementario": 0.9473684210526315,
-            "triada": 0.9565217391304348,
-            "analogo": 1.0,
-            "monocromatica": 1.0
+            "complementario": 1.0,
+            "triada": 0.9130434782608695,
+            "analogo": 0.875,
+            "monocromatica": 0.9545454545454546
           },
-          "recall_min": 0.9473684210526315,
-          "nll": 0.13238009433791706,
-          "ece": 0.09156107753515243,
-          "t_opt": 0.48,
+          "recall_min": 0.875,
+          "nll": 0.1788901981873252,
+          "ece": 0.10714944563806057,
+          "t_opt": 0.59,
           "n": 80,
           "feature_dim": 54,
           "fallback_extractions": 0
@@ -122,13 +122,13 @@
         "calibration": {
           "method": "temperature",
           "calibrated": true,
-          "temperature": 0.266489,
+          "temperature": 0.558831,
           "fittedOn": "pipeline-val",
           "n": 120,
-          "eceBefore": 0.107413,
-          "eceAfter": 0.020961,
-          "nllBefore": 0.137652,
-          "nllAfter": 0.042864,
+          "eceBefore": 0.100644,
+          "eceAfter": 0.03503,
+          "nllBefore": 0.182579,
+          "nllAfter": 0.130357,
           "range": [
             0.2,
             5.0
