@@ -29,7 +29,7 @@ export function ResultCard({ result }: Props) {
             className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
           >
             {result.suggestion ??
-              "La foto no tiene suficiente variedad de color; prueba con mejor luz o una imagen más colorida."}
+              "Confianza moderada; detectamos los colores aun con poca definición. Si quieres más precisión, prueba con otra foto."}
           </div>
         ) : null}
         <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">

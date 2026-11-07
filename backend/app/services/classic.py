@@ -16,6 +16,9 @@ from app.schemas.palette import Color, ColorRole, HarmonyType, PaletteResponse
 
 MAX_CLUSTERS = 10  # contrato: top-10 (en main era 5)
 MAX_SIZE = (300, 300)
+# Soporte baja definición: si la imagen pegada es un thumbnail diminuto se
+# amplía hasta este lado para estabilizar KMeans (64px no toca el eval).
+MIN_SIDE_CLASSIC = 64
 RANDOM_STATE = 42
 N_INIT = 10
 
@@ -102,6 +105,14 @@ class ClassicPaletteIdentifier:
                 else:
                     image = image.convert("RGB")
                 image.thumbnail(MAX_SIZE)
+                # Soporte baja calidad: amplía thumbnails pegados muy pequeños.
+                # NEAREST para no inventar colores blended (contrato n->n).
+                if max(image.size) < MIN_SIDE_CLASSIC:
+                    scale = MIN_SIDE_CLASSIC / float(max(image.size))
+                    image = image.resize(
+                        (max(1, round(image.size[0] * scale)), max(1, round(image.size[1] * scale))),
+                        Image.NEAREST,
+                    )
                 pixels = np.asarray(image).reshape(-1, 3)
         except (UnidentifiedImageError, OSError) as exc:
             raise ValueError("El archivo no es una imagen válida") from exc
