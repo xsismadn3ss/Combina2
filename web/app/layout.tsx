@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TopNav } from "@/components/navigation/TopNav";
 import { MobileDock } from "@/components/navigation/MobileDock";
 import { Toaster } from "@/components/ui/sonner";
+import { SnowEffect } from "@/components/SnowEffect";
 import { cn } from "@/lib/utils";
 
 const notoSerifHeading = Noto_Serif({
@@ -84,6 +85,7 @@ export default function RootLayout({
     >
       <body>
         <ThemeProvider>
+          <SnowEffect />
           <TopNav />
           <main className="mx-auto min-h-svh w-full max-w-6xl px-4 pb-24 pt-6 md:pb-6">
             {children}
