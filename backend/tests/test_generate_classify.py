@@ -164,6 +164,69 @@ def test_classic_fallback_preserves_multicolor_inputs_and_diverse_harmony(monkey
     assert len(set(extras)) == len(extras)
 
 
+@pytest.mark.parametrize("anchor", ["#FFFFFF", "#000000"])
+@pytest.mark.parametrize("harmony", [None, HarmonyType.COMPLEMENTARY, HarmonyType.TRIADIC])
+def test_achromatic_anchor_produces_grayscale_accents_fallback(monkeypatch, anchor, harmony):
+    """Blanco/negro puros no deben inventar rojizos (forzar saturación)."""
+    monkeypatch.setattr(inference, "load_keras_model", lambda _name: None)
+    result = inference.generate_palettes([anchor], harmony, top_k=5)
+    assert result.fallback is True
+    assert len(result.palettes) == 5
+    signatures = set()
+    for palette in result.palettes:
+        values = [c.value.upper() for c in palette.colors]
+        assert len(values) == inference.PALETTE_SIZE
+        assert values[0] == anchor
+        for accent in values[1:]:
+            _h, s, _l = ColorConverter.hex_to_hsl(accent)
+            assert s <= 12.0, f"{accent} tiene saturación {s} con ancla {anchor}"
+        signatures.add(tuple(values))
+    assert len(signatures) == 5
+
+
+@pytest.mark.parametrize("anchor", ["#FFFFFF", "#000000"])
+def test_achromatic_anchor_produces_grayscale_accents_with_model(monkeypatch, anchor):
+    """Mismo contrato en el path con red G activa (condicionamiento)."""
+    class _FakeG:
+        def predict(self, inputs, verbose=0):
+            pal = np.array([[0.5, 0.0, 0.0] * 5], dtype=np.float32)
+            score = np.array([[0.9]], dtype=np.float32)
+            return [pal, score]
+    monkeypatch.setattr(inference, "load_keras_model", lambda slot: _FakeG())
+    result = inference.generate_palettes([anchor], None, top_k=3)
+    assert result.fallback is False
+    assert len(result.palettes) == 3
+    for palette in result.palettes:
+        values = [c.value.upper() for c in palette.colors]
+        assert len(values) == inference.PALETTE_SIZE
+        assert values[0] == anchor
+        for accent in values[1:]:
+            _h, s, _l = ColorConverter.hex_to_hsl(accent)
+            assert s <= 12.0, f"{accent} tiene saturación {s} con ancla {anchor}"
+
+
+@pytest.mark.parametrize("anchors", [
+    ["#FFFFFF", "#22C55E", "#3B82F6"],
+    ["#000000", "#22C55E", "#3B82F6"],
+    ["#22C55E", "#3B82F6", "#FFFFFF"],
+])
+def test_mixed_anchors_with_gray_use_chromatic_accents(monkeypatch, anchors):
+    """El gris se conserva como ancla pero los acentos usan el color vivo."""
+    monkeypatch.setattr(inference, "load_keras_model", lambda _name: None)
+    result = inference.generate_palettes(anchors, None, top_k=3)
+    assert result.fallback is True
+    for palette in result.palettes:
+        values = [c.value.upper() for c in palette.colors]
+        assert len(values) == inference.PALETTE_SIZE
+        for anchor in anchors:
+            assert anchor in values
+        chromatic = [
+            c for c in values[len(anchors):]
+            if ColorConverter.hex_to_hsl(c)[1] > 20.0
+        ]
+        assert chromatic, f"acentos grises con anclas {anchors}: {values}"
+
+
 def test_real_generate_model_preserves_selected_colors_and_diversifies():
     model_path = inference.active_keras_path("generate")
     if model_path is None:
