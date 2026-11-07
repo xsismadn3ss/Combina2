@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Palette, Loader2, Wand2 } from "lucide-react";
 import { UploadImage } from "@/components/UploadImage";
+import { ManualColorPicker } from "@/components/ManualColorPicker";
 import { Top10Grid } from "@/components/Top10Grid";
 import { PaletteCarousel } from "@/components/PaletteCarousel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -21,11 +23,13 @@ const MAX_SELECTED_COLORS = 4;
 
 export default function GenerarPage() {
   const { topK, setTopK } = useTopK();
+  const [source, setSource] = useState<"image" | "manual">("image");
   const [flow, setFlow] = useState<FlowState>("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   const [extract, setExtract] = useState<ExtractResponse | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [manualColors, setManualColors] = useState<string[]>([]);
   const [harmony, setHarmony] = useState<HarmonyType | "">("");
   const [harmonies, setHarmonies] = useState<string[]>([]);
   const [result, setResult] = useState<GenerateResponse | null>(null);
@@ -63,6 +67,12 @@ export default function GenerarPage() {
     setResult(null);
   }, [updatePreview]);
 
+  const resetManual = useCallback(() => {
+    setManualColors([]);
+    setResult(null);
+    if (source === "manual") setFlow("idle");
+  }, [source]);
+
   const handleFileSelected = async (f: File) => {
     updatePreview(f);
     setSelected([]);
@@ -88,14 +98,15 @@ export default function GenerarPage() {
   };
 
   const handleGenerate = async () => {
-    if (selected.length === 0) {
+    const activeColors = source === "manual" ? manualColors : selected;
+    if (activeColors.length === 0) {
       toast.error("Selecciona al menos un color");
       return;
     }
     setFlow("generating");
     try {
       const payload = {
-        colors: selected,
+        colors: activeColors,
         topK: topK,
         harmony: harmony ? (harmony as HarmonyType) : null,
       };
@@ -109,6 +120,13 @@ export default function GenerarPage() {
     }
   };
 
+  const showCustomize =
+    source === "manual"
+      ? manualColors.length > 0 || flow === "generating" || flow === "done" || flow === "error"
+      : !!extract &&
+        (flow === "selecting" || flow === "generating" || flow === "done" || flow === "error");
+  const canGenerate = (source === "manual" ? manualColors : selected).length > 0;
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="space-y-2">
@@ -116,43 +134,88 @@ export default function GenerarPage() {
           <Palette className="size-6" /> Generar paleta
         </h1>
         <p className="text-sm text-muted-foreground">
-          Sube una foto, elige los colores que te gustan y crea paletas para inspirarte.
+          Sube una foto, pega una imagen o elige tus colores manualmente y crea paletas para inspirarte.
         </p>
       </div>
 
-      <UploadImage
-        onFileSelected={handleFileSelected}
-        isLoading={flow === "uploading" || flow === "generating"}
-        previewUrl={previewUrl}
-        onClear={reset}
-      />
+      <Tabs
+        value={source}
+        onValueChange={(v) => setSource(v as "image" | "manual")}
+      >
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="image">Desde imagen</TabsTrigger>
+          <TabsTrigger value="manual">Manual</TabsTrigger>
+        </TabsList>
 
-      {flow === "uploading" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Loader2 className="size-4 animate-spin" /> Extrayendo colores de la imagen
-            </CardTitle>
-            <CardDescription>Estamos descubriendo los colores de tu foto.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-5 gap-3">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full rounded-lg sm:h-20" />
-            ))}
-          </CardContent>
-        </Card>
-      )}
+        <TabsContent value="image" className="space-y-6">
+          <UploadImage
+            onFileSelected={handleFileSelected}
+            isLoading={flow === "uploading" || flow === "generating"}
+            previewUrl={previewUrl}
+            onClear={reset}
+          />
 
-      {extract && (flow === "selecting" || flow === "generating" || flow === "done" || flow === "error") && (
-        <Top10Grid
-          colors={extract.colors}
-          selected={selected}
-          onToggle={toggle}
-          maxSelected={MAX_SELECTED_COLORS}
-        />
-      )}
+          {flow === "uploading" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Loader2 className="size-4 animate-spin" /> Extrayendo colores de la imagen
+                </CardTitle>
+                <CardDescription>Estamos descubriendo los colores de tu foto.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-5 gap-3">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 w-full rounded-lg sm:h-20" />
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
-      {(flow === "selecting" || flow === "generating" || flow === "done" || flow === "error") && extract && (
+          {extract && (flow === "selecting" || flow === "generating" || flow === "done" || flow === "error") && (
+            <Top10Grid
+              colors={extract.colors}
+              selected={selected}
+              onToggle={toggle}
+              maxSelected={MAX_SELECTED_COLORS}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="manual" className="space-y-6">
+          <ManualColorPicker
+            colors={manualColors}
+            maxColors={MAX_SELECTED_COLORS}
+            onAdd={(hex) => {
+              setManualColors((prev) => [...prev, hex]);
+              setResult(null);
+              if (flow === "done" || flow === "error") setFlow("idle");
+            }}
+            onRemove={(index) => {
+              setManualColors((prev) => prev.filter((_, i) => i !== index));
+              setResult(null);
+              if (flow === "done" || flow === "error") setFlow("idle");
+            }}
+            onUpdate={(index, hex) => {
+              setManualColors((prev) => prev.map((c, i) => (i === index ? hex : c)));
+              setResult(null);
+              if (flow === "done" || flow === "error") setFlow("idle");
+            }}
+          />
+          {manualColors.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetManual}
+              disabled={flow === "generating"}
+            >
+              Limpiar colores
+            </Button>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {showCustomize && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Personaliza tus paletas</CardTitle>
@@ -192,7 +255,7 @@ export default function GenerarPage() {
             </div>
             <Button
               onClick={handleGenerate}
-              disabled={selected.length === 0 || flow === "generating"}
+              disabled={!canGenerate || flow === "generating"}
               className="w-full gap-2"
             >
               {flow === "generating" ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
-import { Camera, ImagePlus, Upload, X } from "lucide-react";
+import { Camera, ClipboardPaste, ImagePlus, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CameraCapture } from "@/components/CameraCapture";
@@ -44,6 +44,53 @@ export function UploadImage({ onFileSelected, isLoading, previewUrl, onClear }: 
     [handleFile]
   );
 
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (isLoading) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleFile(file);
+            return;
+          }
+        }
+      }
+      const files = e.clipboardData?.files;
+      if (files && files.length > 0) {
+        e.preventDefault();
+        handleFile(files[0]);
+      }
+    },
+    [handleFile, isLoading]
+  );
+
+  const handlePasteButton = useCallback(async () => {
+    if (isLoading) return;
+    try {
+      if (!navigator.clipboard?.read) {
+        setValidationError("Tu navegador no permite leer el portapapeles con un botón. Pega la imagen con Ctrl+V sobre esta zona.");
+        return;
+      }
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const ext = imageType.split("/")[1] ?? "png";
+          handleFile(new File([blob], `pegada-${Date.now()}.${ext}`, { type: imageType }));
+          return;
+        }
+      }
+      setValidationError("No encontramos una imagen en el portapapeles. Copia una imagen y vuelve a intentarlo.");
+    } catch {
+      setValidationError("No pudimos leer el portapapeles. Pega la imagen con Ctrl+V sobre esta zona.");
+    }
+  }, [handleFile, isLoading]);
+
   // El atributo `capture` se aplica justo antes de abrir el picker para que en
   // móvil se abra la cámara nativa cuando el navegador no puede usar getUserMedia.
   const openFilePicker = useCallback((useNativeCamera: boolean) => {
@@ -78,7 +125,7 @@ export function UploadImage({ onFileSelected, isLoading, previewUrl, onClear }: 
   );
 
   return (
-    <Card>
+    <Card onPaste={handlePaste}>
       <CardContent className="pt-6">
         {validationError && (
           <p role="alert" className="mb-3 text-sm text-destructive">
@@ -158,19 +205,33 @@ export function UploadImage({ onFileSelected, isLoading, previewUrl, onClear }: 
                 setDragOver(false);
                 handleFiles(e.dataTransfer.files);
               }}
+              onPaste={handlePaste}
+              tabIndex={0}
+              aria-label="Zona para pegar una imagen del portapapeles"
               className={cn(
-                "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-4 py-5 text-center transition-colors",
+                "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-4 py-5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 dragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",
                 isLoading && "pointer-events-none opacity-60"
               )}
             >
               <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <Upload className="size-3.5" aria-hidden />
-                También puedes arrastrar una imagen aquí
+                Arrastra una imagen aquí o pégala con Ctrl+V
               </p>
               <p className="text-xs text-muted-foreground">
                 PNG, JPG, WEBP, GIF o BMP · máximo 10 MB
               </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handlePasteButton}
+                disabled={isLoading}
+                className="mt-1 gap-1 text-xs"
+              >
+                <ClipboardPaste className="size-3.5" aria-hidden />
+                Pegar desde portapapeles
+              </Button>
             </div>
           </div>
         )}

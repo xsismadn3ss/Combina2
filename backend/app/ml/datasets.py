@@ -40,6 +40,10 @@ from app.ml.color_spaces import ColorConverter
 
 MAX_SIDE = 300
 SAMPLE_PIXELS = 3000
+# Soporte de baja calidad: las imágenes pegadas o thumbnails muy pequeños se
+# amplían hasta este lado mínimo (LANCZOS) antes de muestrear, para que KMeans
+# y la red E reciban suficientes píxeles aunque no recupere detalle real.
+MIN_SIDE = 256
 
 VALID_HARMONY_LABELS = frozenset(
     {"complementario", "triada", "analogo", "monocromatica"}
@@ -95,6 +99,20 @@ def resize_max_side(img: Image.Image, max_side: int = MAX_SIDE) -> Image.Image:
     if side <= max_side:
         return img
     scale = max_side / float(side)
+    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+
+
+def ensure_min_side(img: Image.Image, min_side: int = MIN_SIDE) -> Image.Image:
+    """Amplía imágenes muy pequeñas (pegar thumbnail, baja definición).
+
+    Sin ampliar no se inventa detalle, pero estabiliza KMeans/muestreo al dar
+    más píxeles interpolados en vez de cientos. No toca imágenes normales.
+    """
+    w, h = img.size
+    side = max(w, h)
+    if side >= min_side or side <= 0:
+        return img
+    scale = min_side / float(side)
     return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
 
 
@@ -175,10 +193,10 @@ def preprocess_image(
     sample_n: int = SAMPLE_PIXELS,
     seed: int = 42,
 ) -> dict:
-    """Preproceso común: resize lado mayor + submuestreo + RGB→Lab normalizado."""
+    """Preproceso común: resize lado mayor + soporte baja definición + Lab."""
     if not image_bytes:
         raise ValueError("El archivo está vacío")
-    img = resize_max_side(load_image_rgb(image_bytes), max_side)
+    img = ensure_min_side(resize_max_side(load_image_rgb(image_bytes), max_side))
     rgb = np.asarray(img, dtype=np.uint8)
     sampled = sample_pixels(rgb, sample_n, seed)
     lab = lab_batch_normalize(rgb_batch_to_lab(sampled))

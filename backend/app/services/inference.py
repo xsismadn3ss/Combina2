@@ -519,8 +519,8 @@ _HARMONY_ROTATION = (
     HarmonyType.MONOCHROMATIC,
 )
 _RETRY_SUGGESTION = (
-    "La foto no tiene suficiente variedad de color; prueba con mejor luz o una "
-    "imagen más colorida."
+    "Confianza moderada; detectamos los colores aun con poca definición. "
+    "Si quieres más precisión, prueba con otra foto con mejor luz o la imagen original."
 )
 _GRAY_SUGGESTION = (
     "La imagen es casi monocroma (gris o un solo tono); prueba con una foto "
