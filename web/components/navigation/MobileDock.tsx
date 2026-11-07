@@ -11,6 +11,7 @@ import {
   DrawerClose,
 } from "@/components/ui/drawer";
 import { NavLinks } from "./NavLinks";
+import { SnowToggle } from "@/components/SnowToggle";
 
 export function MobileDock() {
   const [open, setOpen] = useState(false);
@@ -52,6 +53,10 @@ export function MobileDock() {
           </DrawerHeader>
           <div className="p-4 pb-8">
             <NavLinks orientation="vertical" onNavigate={() => setOpen(false)} />
+            <div className="mt-4 flex items-center justify-between border-t pt-4">
+              <span className="text-sm text-muted-foreground">Nieve</span>
+              <SnowToggle />
+            </div>
           </div>
         </DrawerContent>
       </Drawer>

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { SwatchBook } from "lucide-react";
 import { NavLinks } from "./NavLinks";
+import { SnowToggle } from "@/components/SnowToggle";
 
 export function TopNav() {
   return (
@@ -19,7 +20,10 @@ export function TopNav() {
           </span>
           <span>Combina2</span>
         </Link>
-        <NavLinks />
+        <div className="flex items-center gap-4">
+          <SnowToggle />
+          <NavLinks />
+        </div>
       </div>
     </header>
   );
