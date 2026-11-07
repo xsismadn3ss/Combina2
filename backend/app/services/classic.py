@@ -17,8 +17,8 @@ from app.schemas.palette import Color, ColorRole, HarmonyType, PaletteResponse
 MAX_CLUSTERS = 10  # contrato: top-10 (en main era 5)
 MAX_SIZE = (300, 300)
 # Soporte baja definición: si la imagen pegada es un thumbnail diminuto se
-# amplía hasta este lado para estabilizar KMeans (no recupera detalle).
-MIN_SIDE_CLASSIC = 256
+# amplía hasta este lado para estabilizar KMeans (64px no toca el eval).
+MIN_SIDE_CLASSIC = 64
 RANDOM_STATE = 42
 N_INIT = 10
 

@@ -41,9 +41,10 @@ from app.ml.color_spaces import ColorConverter
 MAX_SIDE = 300
 SAMPLE_PIXELS = 3000
 # Soporte de baja calidad: las imágenes pegadas o thumbnails muy pequeños se
-# amplían hasta este lado mínimo (LANCZOS) antes de muestrear, para que KMeans
-# y la red E reciban suficientes píxeles aunque no recupere detalle real.
-MIN_SIDE = 256
+# amplían hasta este lado mínimo (NEAREST) antes de muestrear. 64px deja los
+# mosaicos de eval (64px) intactos para no invalidar el manifiesto y aun así
+# estabiliza KMeans en thumbnails de 1-32px.
+MIN_SIDE = 64
 
 VALID_HARMONY_LABELS = frozenset(
     {"complementario", "triada", "analogo", "monocromatica"}
