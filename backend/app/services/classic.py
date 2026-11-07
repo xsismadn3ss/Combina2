@@ -106,11 +106,12 @@ class ClassicPaletteIdentifier:
                     image = image.convert("RGB")
                 image.thumbnail(MAX_SIZE)
                 # Soporte baja calidad: amplía thumbnails pegados muy pequeños.
+                # NEAREST para no inventar colores blended (contrato n->n).
                 if max(image.size) < MIN_SIDE_CLASSIC:
                     scale = MIN_SIDE_CLASSIC / float(max(image.size))
                     image = image.resize(
                         (max(1, round(image.size[0] * scale)), max(1, round(image.size[1] * scale))),
-                        Image.LANCZOS,
+                        Image.NEAREST,
                     )
                 pixels = np.asarray(image).reshape(-1, 3)
         except (UnidentifiedImageError, OSError) as exc:

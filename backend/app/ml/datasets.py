@@ -105,15 +105,17 @@ def resize_max_side(img: Image.Image, max_side: int = MAX_SIDE) -> Image.Image:
 def ensure_min_side(img: Image.Image, min_side: int = MIN_SIDE) -> Image.Image:
     """Amplía imágenes muy pequeñas (pegar thumbnail, baja definición).
 
-    Sin ampliar no se inventa detalle, pero estabiliza KMeans/muestreo al dar
-    más píxeles interpolados en vez de cientos. No toca imágenes normales.
+    Usa NEAREST (no LANCZOS) a propósito: preserva los colores exactos sin
+    inventar tonos intermedios por interpolación, así el contrato de
+    imágenes pequeñas (n colores -> <= n extraídos) se mantiene y KMeans
+    solo gana estabilidad por tener más píxeles.
     """
     w, h = img.size
     side = max(w, h)
     if side >= min_side or side <= 0:
         return img
     scale = min_side / float(side)
-    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.NEAREST)
 
 
 def sample_pixels(rgb: np.ndarray, n: int = SAMPLE_PIXELS, seed: int = 42) -> np.ndarray:
