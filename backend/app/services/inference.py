@@ -529,6 +529,56 @@ _GRAY_SUGGESTION = (
 # Por debajo de este croma máximo la imagen puede no aportar señal de armonía;
 # el guard exige además poca variedad de tono (ver `palette_is_low_information`).
 COLORFULNESS_RETRY_MIN = LOW_INFO_CHROMA_MAX
+# Saturación HSL (0-100) por debajo de la cual un ancla se considera acromática
+# (blanco/negro/gris: el tono es indefinido y suele caer en el eje rojo).
+# Coherente con CHROMATIC_MIN de `color_features`. Generar con offsets de tono
+# y saturación forzada (`max(45, ...)`) sobre un gris inventa rojizos (issue
+# paletas de #FFFFFF/#000000): en ese caso se genera rampa de grises.
+ACHROMATIC_SAT_MAX = 8.0
+# Niveles de luminosidad para rampas de grises con ancla acromática.
+# 8 niveles -> cada propuesta toma 6 consecutivos desde un inicio distinto
+# (`index * 3`), así las 5 propuestas salen distintas sin colapsar a topes.
+_GRAY_RAMP_LEVELS = (10.0, 22.0, 34.0, 46.0, 58.0, 70.0, 82.0, 92.0)
+
+
+def _gray_accents(
+    anchor_hex: str, hue: float, gray_sat: float, index: int, count: int
+) -> list[str]:
+    """Acentos grises distintos entre propuestas para anclas acromáticas."""
+    anchor = anchor_hex.upper()
+    levels = _GRAY_RAMP_LEVELS
+    start = (index * 3) % len(levels)
+    picked: list[str] = []
+    seen = {anchor}
+    for step in range(len(levels) * 2):
+        if len(picked) >= count:
+            break
+        tone = ColorConverter.hsl_to_hex(
+            hue, gray_sat, levels[(start + step) % len(levels)]
+        ).upper()
+        if tone in seen:
+            continue
+        seen.add(tone)
+        picked.append(tone)
+    return picked
+
+
+def _accent_base_hex(base_hex_colors: list[str]) -> str:
+    """Ancla que manda en los acentos: la primera con color.
+
+    Blanco/negro/grises se conservan como anclas fijas, pero si la mezcla
+    tiene al menos un color cromático los acentos armonizan con él (no tiene
+    sentido teñir toda la paleta de gris porque el blanco vaya primero).
+    Solo cuando TODAS las anclas son acromáticas se genera rampa de grises.
+    """
+    for hex_color in base_hex_colors:
+        try:
+            saturated = ColorConverter.hex_to_hsl(hex_color)[1] > ACHROMATIC_SAT_MAX
+        except ValueError:
+            continue
+        if saturated:
+            return hex_color
+    return base_hex_colors[0]
 
 
 def _normalized_anchor_key(base_hex_colors: list[str]) -> str:
@@ -598,7 +648,34 @@ def _fill_palette_colors(
     Se usa después de los tonos armónicos principales. Reutiliza los dos
     offsets de la armonía y separa cada ronda en luminosidad (y algo de
     saturación) para obtener tonos distintos sin salir del tipo declarado.
+
+    Con ancla acromática (blanco/negro/gris) los offsets de tono no tienen
+    sentido (el tono es indefinido): se rellena con rampa de grises alternando
+    más claro/más oscuro con amplitud creciente.
     """
+    if saturation <= ACHROMATIC_SAT_MAX:
+        gray_sat = min(saturation, ACHROMATIC_SAT_MAX)
+        step = 13.0 + (variation % 12.0)
+        up = lightness
+        down = lightness
+        lighter = lightness < 94.0
+        position = 0
+        while len(colors) < PALETTE_SIZE and position < 360:
+            if lighter:
+                up = min(94.0, up + step)
+                tone_l = up
+            else:
+                down = max(8.0, down - step)
+                tone_l = down
+            lighter = not lighter
+            if position % 2 == 1:
+                step += 6.0
+            tone = ColorConverter.hsl_to_hex(hue, gray_sat, tone_l)
+            _append_accent(colors, tone)
+            position += 1
+            if up >= 94.0 and down <= 8.0:
+                break
+        return
     position = 0
     while len(colors) < PALETTE_SIZE and position < 360:
         offset = offsets[position % len(offsets)] + variation
@@ -629,7 +706,12 @@ def generate_palettes(
     # Los colores elegidos son anclas, no candidatos a sustituirse. Se
     # conservan al inicio de cada propuesta y la armonía solo completa la paleta.
     anchors = [color.upper() for color in base_hex_colors]
-    hue, saturation, lightness = ColorConverter.hex_to_hsl(anchors[0])
+    # Base de los acentos: primer ancla con color; rampa de grises solo si
+    # todas las anclas son acromáticas (`base_hex is anchors[0]` + gris).
+    base_hex = _accent_base_hex(anchors)
+    hue, saturation, lightness = ColorConverter.hex_to_hsl(base_hex)
+    achromatic = base_hex == anchors[0] and saturation <= ACHROMATIC_SAT_MAX
+    gray_sat = min(saturation, ACHROMATIC_SAT_MAX)
     sequence = harmony_sequence(base_hex_colors, harmony, count)
     variants: list[ScoredPalette] = []
     for index, current_harmony in enumerate(sequence):
@@ -637,28 +719,38 @@ def generate_palettes(
         colors = [Color(value=value, role="primary" if i == 0 else "secondary")
                   for i, value in enumerate(anchors)]
         variation = float(index) * 22.0
-        if current_harmony == HarmonyType.MONOCHROMATIC:
-            tones = [
-                ColorConverter.hsl_to_hex(hue, max(35.0, saturation), tone_lightness).upper()
-                for tone_lightness in (max(12.0, lightness - 28.0 - variation),
-                                       min(92.0, lightness + 28.0 + variation))
-            ]
+        if achromatic:
+            # Sin tono definido: rampa de grises con fase por propuesta.
+            # Se generan todos los acentos de una vez (sin topes que colapsen).
+            for tone in _gray_accents(
+                anchors[0], hue, gray_sat, index, PALETTE_SIZE - len(colors)
+            ):
+                if len(colors) >= PALETTE_SIZE:
+                    break
+                _append_accent(colors, tone)
         else:
-            offsets = (harmony_offsets[0] - variation, harmony_offsets[1] + variation)
-            tones = [
-                ColorConverter.hsl_to_hex((hue + offset) % 360.0, max(45.0, saturation),
-                                          min(85.0, max(25.0, lightness + (variation if j else -variation))))
-                .upper()
-                for j, offset in enumerate(offsets)
-            ]
-        for tone in tones:
-            if len(colors) >= PALETTE_SIZE:
-                break
-            _append_accent(colors, tone)
-        # Las anclas ya ocupan parte de la paleta; completa con tonos separados.
-        _fill_palette_colors(
-            colors, hue, saturation, lightness, variation, harmony_offsets
-        )
+            if current_harmony == HarmonyType.MONOCHROMATIC:
+                tones = [
+                    ColorConverter.hsl_to_hex(hue, max(35.0, saturation), tone_lightness).upper()
+                    for tone_lightness in (max(12.0, lightness - 28.0 - variation),
+                                           min(92.0, lightness + 28.0 + variation))
+                ]
+            else:
+                offsets = (harmony_offsets[0] - variation, harmony_offsets[1] + variation)
+                tones = [
+                    ColorConverter.hsl_to_hex((hue + offset) % 360.0, max(45.0, saturation),
+                                              min(85.0, max(25.0, lightness + (variation if j else -variation))))
+                    .upper()
+                    for j, offset in enumerate(offsets)
+                ]
+            for tone in tones:
+                if len(colors) >= PALETTE_SIZE:
+                    break
+                _append_accent(colors, tone)
+            # Las anclas ya ocupan parte de la paleta; completa con tonos separados.
+            _fill_palette_colors(
+                colors, hue, saturation, lightness, variation, harmony_offsets
+            )
         variants.append(ScoredPalette(type=current_harmony.value, colors=colors,
                                       score=round(1.0 - index * 0.01, 2)))
     return GenerateResponse(palettes=variants, fallback=True)
@@ -718,7 +810,15 @@ def _condition_palettes(
     """
     if len(anchors) > 5:
         raise ValueError("Se pueden seleccionar como máximo cinco colores")
-    hue, saturation, lightness = ColorConverter.hex_to_hsl(anchors[0])
+    # Base de los acentos: primer ancla con color (el blanco/negro se conserva
+    # como ancla pero no manda si hay color en la mezcla).
+    base_hex = _accent_base_hex([h.upper() for h in anchors])
+    hue, saturation, lightness = ColorConverter.hex_to_hsl(base_hex)
+    # Ancla acromática: el tono es indefinido; fijar la saturación al nivel del
+    # ancla evita que la guía del modelo o los mínimos (45/35) inventen rojizos.
+    # Solo rampa de grises cuando TODAS las anclas son grises.
+    achromatic = base_hex == anchors[0].upper() and saturation <= ACHROMATIC_SAT_MAX
+    gray_sat = min(saturation, ACHROMATIC_SAT_MAX)
     result = []
     for index, (harmony, proposed) in enumerate(
         candidates[:max(1, int(top_k))]
@@ -738,7 +838,11 @@ def _condition_palettes(
                 min(3 + position, len(proposed.colors) - 1)
             ]
             _, proposal_s, proposal_l = ColorConverter.hex_to_hsl(proposal_color.value)
-            if harmony == HarmonyType.MONOCHROMATIC:
+            if achromatic:
+                tone_l = (15.0 + (index * 19.0 + position * 47.0) % 75.0)
+                tone_l = min(94.0, max(8.0, tone_l * 0.7 + proposal_l * 0.3))
+                tone = ColorConverter.hsl_to_hex(hue, gray_sat, tone_l)
+            elif harmony == HarmonyType.MONOCHROMATIC:
                 tone_l = (15.0 + (index * 19.0 + position * 47.0) % 75.0)
                 tone_l = min(90.0, max(10.0, tone_l * 0.7 + proposal_l * 0.3))
                 tone = ColorConverter.hsl_to_hex(
@@ -746,8 +850,11 @@ def _condition_palettes(
                 )
             else:
                 offset = offsets[position % 2] + rotation
-                tone_s = min(95.0, max(45.0,
-                    saturation * 0.7 + proposal_s * 0.3 + (index % 3 - 1) * 8.0))
+                if achromatic:
+                    tone_s = gray_sat
+                else:
+                    tone_s = min(95.0, max(45.0,
+                        saturation * 0.7 + proposal_s * 0.3 + (index % 3 - 1) * 8.0))
                 tone_l = min(82.0, max(25.0,
                     lightness * 0.7 + proposal_l * 0.3
                     + ((position % 6) * 12.0 - 10.0)
